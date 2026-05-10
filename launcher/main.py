@@ -2,7 +2,7 @@
 
 
 import sys
-from PySide2.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from ui.main_window import MainWindow
 
 
@@ -18,7 +18,7 @@ def main():
     window.show()
 
     #
-    return app.exec_()
+    return app.exec()
 
 
 if __name__ == "__main__":

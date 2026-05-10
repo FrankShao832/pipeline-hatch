@@ -1,13 +1,13 @@
 from pathlib import Path
 import os
 import subprocess
-from PySide2.QtWidgets import (
+from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
     QLabel, QTreeWidget, QDialog, QTreeWidgetItem, QMessageBox
 )
 
-from PySide2.QtGui import QIcon, Qt
-from PySide2.QtCore import QFileSystemWatcher
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QFileSystemWatcher
 from ui.settings_window import SettingsPanel
 
 MAYA_ENV_PATH = '/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env'
@@ -74,9 +74,9 @@ class MainWindow(QMainWindow):
         self.top_right_layout = QHBoxLayout()
         self.top_right_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.top_left_layout.setAlignment(Qt.AlignLeft)  # type: ignore
+        self.top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.top_left_layout.addWidget(self.role_menu)
-        self.top_right_layout.setAlignment(Qt.AlignRight)  # type: ignore
+        self.top_right_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.top_right_layout.addWidget(self.launch_btn)
         self.top_right_layout.addWidget(self.settings_btn)
         self.top_layout.addLayout(self.top_left_layout)
@@ -132,9 +132,9 @@ class MainWindow(QMainWindow):
         """Custom settings."""
 
         settings_panel = SettingsPanel()
-        result = settings_panel.exec_()
+        result = settings_panel.exec()
 
-        if result == QDialog.Accepted:
+        if result == QDialog.DialogCode.Accepted:
 
             self.root_path = settings_panel.root_path_value.text()
             self.publish_root_path = settings_panel.publish_root_value.text()
@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
                     shot_item = QTreeWidgetItem(seq_item)
                     shot_item.setText(0, shot)
                     self.seq_shot_tree.sortItems(
-                        0, Qt.AscendingOrder)  # type: ignore
+                        0, Qt.SortOrder.AscendingOrder)
 
     def load_file(self):
 
@@ -201,11 +201,11 @@ class MainWindow(QMainWindow):
 
             msg_box = QMessageBox()
             msg_box.setText('Select a role to load files')
-            msg_box.setStandardButtons(QMessageBox.Ok)  # type: ignore
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
             if self.role_menu.currentText() == 'Select your role...' and \
                     parent_item is not None:
-                msg_box.exec_()
+                msg_box.exec()
             else:
                 self.role = self.role_menu.currentText().lower()
 
@@ -234,7 +234,7 @@ class MainWindow(QMainWindow):
                             file_item = QTreeWidgetItem(self.file_tree)
                             file_item.setText(0, f)
                             self.file_tree.sortItems(
-                                0, Qt.AscendingOrder)  # type: ignore
+                                0, Qt.SortOrder.AscendingOrder)
 
     def create_maya_env(self):
         """Parse the Maya.env file and create a new one for subprocess."""
@@ -319,8 +319,8 @@ class MainWindow(QMainWindow):
             else:
                 msg_box = QMessageBox()
                 msg_box.setText('Select a role!')
-                msg_box.setStandardButtons(QMessageBox.Ok)  # type: ignore
-                msg_box.exec_()
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
 
         else:
             if self.role == 'maya':
@@ -339,8 +339,8 @@ class MainWindow(QMainWindow):
             else:
                 msg_box = QMessageBox()
                 msg_box.setText('Select a role!')
-                msg_box.setStandardButtons(QMessageBox.Ok)  # type: ignore
-                msg_box.exec_()
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
 
         if self.role == 'maya':
             subprocess.Popen(dcc_command, env=maya_env)
@@ -351,10 +351,10 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     import sys
-    from PySide2.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     # Only needed (sys.argv) for access to command line arguments
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
