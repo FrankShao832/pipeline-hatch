@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+import platform
 from typing import Optional
 
 from launcher.core.config_manager import config_manager
@@ -82,8 +83,87 @@ class BaseDCC(ABC):
         return self.PIPELINE_ENV_KEYS
 
     def executable_exists(self) -> bool:
-        """Check if DCC executable exists."""
-        return Path(self._executable).exists()
+        """Check if DCC executable exists.
+
+        Searches in order:
+        1. macOS /Applications/ .app bundle
+        2. Direct executable path
+        3. PATH environment variable (basename only)
+
+        Returns:
+            True if DCC is found, False otherwise.
+        """
+        system = platform.system()
+
+        # 1. macOS: Check /Applications/ for .app bundle
+        if system == "Darwin" and self._app_name:
+            app_path = Path(f"/Applications/{self._app_name}")
+            if app_path.exists():
+                return True
+
+        # 2. Direct executable path check
+        if self._executable:
+            if Path(self._executable).exists():
+                return True
+
+            # For macOS .app bundles, check Contents/MacOS binary
+            if system == "Darwin" and self._app_name:
+                macos_binary = Path(f"/Applications/{self._app_name}/Contents/MacOS")
+                if macos_binary.exists():
+                    return True
+
+        # 3. Check in PATH (for executables like "maya", "houdini", "nuke")
+        return self.find_in_path() is not None
+
+    def find_in_path(self) -> Optional[str]:
+        """Find DCC executable in system PATH.
+
+        Looks for the executable by its basename in the PATH environment
+        variable. Works on macOS, Linux, and Windows.
+
+        Returns:
+            Full path to executable if found, None otherwise.
+        """
+        if not self._executable:
+            return None
+
+        # Get executable name (basename without directory)
+        exec_name = Path(self._executable).name
+
+        # Add platform-specific extensions for Windows
+        if platform.system() == "Windows":
+            for ext in ["", ".exe", ".bat", ".cmd"]:
+                candidate = self._search_path(exec_name + ext)
+                if candidate:
+                    return candidate
+        else:
+            candidate = self._search_path(exec_name)
+            if candidate:
+                return candidate
+
+        return None
+
+    def _search_path(self, name: str) -> Optional[str]:
+        """Search for executable in PATH.
+
+        Args:
+            name: Executable name to search for.
+
+        Returns:
+            Full path if found, None otherwise.
+        """
+        import os
+
+        path_sep = ";" if platform.system() == "Windows" else ":"
+        path_env = os.environ.get("PATH", "")
+
+        for directory in path_env.split(path_sep):
+            candidate = Path(directory) / name
+            # Check both exact file and executable bit
+            if candidate.exists() and os.access(str(candidate), os.X_OK):
+                return str(candidate)
+
+        return None
 
     @abstractmethod
     def build_command(

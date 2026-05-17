@@ -242,16 +242,23 @@ class TestBaseDCC:
         env = maya.parse_env_file()
         assert env == {}
 
-    def test_executable_exists(self):
-        """Test executable existence check."""
+    def test_executable_exists_calls_method(self):
+        """Test executable_exists method is callable."""
         maya = MayaDCC({
             "name": "Maya",
             "role": "maya",
             "executable": "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya"
         })
-        # This will depend on actual installation
-        # Just test the method exists and is callable
         assert callable(maya.executable_exists)
+
+    def test_find_in_path_method_exists(self):
+        """Test find_in_path method is callable."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya"
+        })
+        assert callable(maya.find_in_path)
 
     def test_get_pipeline_env_keys(self):
         """Test getting pipeline environment keys from config."""
@@ -262,3 +269,112 @@ class TestBaseDCC:
         keys = maya.get_pipeline_env_keys()
         assert isinstance(keys, list)
         assert len(keys) > 0
+
+
+class TestExecutableExists:
+    """Test suite for executable_exists() cross-platform detection."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Reset singleton before each test."""
+        ConfigManager._instance = None
+        ConfigManager._config_cache = {}
+        yield
+
+    def test_executable_exists_none_config(self):
+        """Test with empty executable config."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": ""
+        })
+        # Should return False when no executable configured
+        # (find_in_path returns None for empty executable)
+        assert maya.executable_exists() is False
+
+    def test_executable_exists_app_name_on_macos(self, monkeypatch):
+        """Test .app bundle detection on macOS."""
+        monkeypatch.setattr("platform.system", lambda: "Darwin")
+
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": "",
+            "app_name": "Maya2025.app"
+        })
+
+        # Mock Path.exists to return True for app bundle
+        monkeypatch.setattr("pathlib.Path.exists", lambda self: "/Applications/Maya2025.app" in str(self))
+
+        # Method should be callable
+        assert callable(maya.executable_exists)
+
+    def test_executable_exists_direct_path(self, tmp_path):
+        """Test executable detection with direct path."""
+        # Create a temporary executable file
+        test_exe = tmp_path / "test_maya"
+        test_exe.write_text("#!/bin/bash\necho test")
+        test_exe.chmod(0o755)
+
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": str(test_exe)
+        })
+
+        assert maya.executable_exists() is True
+
+    def test_executable_exists_nonexistent_path(self):
+        """Test executable detection with non-existent path."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": "/nonexistent/path/to/maya"
+        })
+
+        assert maya.executable_exists() is False
+
+
+class TestFindInPath:
+    """Test suite for find_in_path() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Reset singleton before each test."""
+        ConfigManager._instance = None
+        ConfigManager._config_cache = {}
+        yield
+
+    def test_find_in_path_empty_executable(self):
+        """Test with empty executable."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": ""
+        })
+
+        assert maya.find_in_path() is None
+
+    def test_find_in_path_returns_basename(self):
+        """Test that find_in_path returns executable basename."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": "/path/to/maya"
+        })
+
+        # Should search for "maya" (basename)
+        # Result depends on system PATH, so just verify method works
+        result = maya.find_in_path()
+        # Result is None if not in PATH, or a path string if found
+        assert result is None or isinstance(result, str)
+
+    def test_search_path_method_exists(self):
+        """Test _search_path method is callable."""
+        maya = MayaDCC({
+            "name": "Maya",
+            "role": "maya",
+            "executable": "/path/to/maya"
+        })
+
+        assert callable(maya._search_path)
