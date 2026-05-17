@@ -1,3 +1,1 @@
-"""
-Utils Package
-"""
+"""Utils package."""

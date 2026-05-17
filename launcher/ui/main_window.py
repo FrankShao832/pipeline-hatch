@@ -1,16 +1,18 @@
 from pathlib import Path
 import os
 import subprocess
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QLabel, QTreeWidget, QDialog, QTreeWidgetItem, QMessageBox
+    QLabel, QTreeWidget, QTreeWidgetItem, QMessageBox
 )
 
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QFileSystemWatcher
-from ui.settings_window import SettingsPanel
 
-MAYA_ENV_PATH = '/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env'
+from launcher.core.config_manager import config_manager
+from launcher.core.dcc_manager import dcc_manager
+from launcher.ui.settings_window import SettingsPanel
 
 
 def get_icon(icon_name: str) -> QIcon:
@@ -31,6 +33,27 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
+        self._load_projects_from_config()
+
+    def _load_projects_from_config(self):
+        """Load projects from YAML config automatically on startup."""
+        try:
+            projects = config_manager.get_project_list()
+            self.project_tree.clear()
+            for proj in projects:
+                if proj.get("enabled", True):
+                    project_item = QTreeWidgetItem(self.project_tree)
+                    project_item.setText(0, proj["name"])
+                    # Store the root path as item data for later use
+                    project_item.setData(0, Qt.ItemDataRole.UserRole, proj["root"])
+
+            # Use the first project's root as default
+            if projects:
+                first_proj = projects[0]
+                self.root_path = first_proj.get("root", "")
+                self.publish_root_path = first_proj.get("publish_root", "")
+        except Exception as e:
+            print(f"Failed to load projects from config: {e}")
 
     def _setup_ui(self):
         self.setWindowTitle("Y Pipeline")
@@ -59,7 +82,7 @@ class MainWindow(QMainWindow):
         ]
         self.role_menu.addItems(role_menu_items)
 
-        self.launch_btn = QPushButton('Launch!')
+        self.launch_btn = QPushButton('Launch')
         self.launch_btn.setFixedWidth(80)
         self.launch_btn.setFixedHeight(36)
 
@@ -129,42 +152,33 @@ class MainWindow(QMainWindow):
         self.launch_btn.clicked.connect(self.launch_dcc)  # type: ignore
 
     def custom_settings(self):
-        """Custom settings."""
-
+        """Open settings dialog for manual path override."""
         settings_panel = SettingsPanel()
         result = settings_panel.exec()
 
-        if result == QDialog.DialogCode.Accepted:
-
+        if result == settings_panel.Accepted:
             self.root_path = settings_panel.root_path_value.text()
             self.publish_root_path = settings_panel.publish_root_value.text()
-
-            # watch project root path
             self.file_watcher.addPath(self.root_path)
 
-            if self.root_path is not None:
-                project_list = []
-                for p in os.listdir(self.root_path):
-                    if os.path.isdir(os.path.join(self.root_path, p)):
-                        project_list.append(p)
-
-                project_list.sort()
-                self.project_tree.clear()
-                for p in project_list:
-                    project_item = QTreeWidgetItem(self.project_tree)
-                    project_item.setText(0, p)
-
-        return self.root_path, self.publish_root_path
-
     def load_seq_shot(self):
-        """_summary_
+        """Load sequence and shot structure for selected project."""
+        current_item = self.project_tree.currentItem()
+        if not current_item:
+            return
 
-        Returns:
-            _type_: _description_
-        """
-        project_name = self.project_tree.currentItem().text(0)
-        project_path = os.path.join(
-            self.root_path, project_name)  # type: ignore
+        project_name = current_item.text(0)
+        project_root = current_item.data(0, Qt.ItemDataRole.UserRole)
+
+        # Fallback to config if no stored path
+        if not project_root:
+            project_root = self.root_path
+
+        project_path = os.path.join(project_root, project_name)
+
+        # Update instance paths
+        self.root_path = project_root
+        self.project = project_name
 
         # watch project folders
         self.file_watcher.addPath(project_path)
@@ -236,23 +250,8 @@ class MainWindow(QMainWindow):
                             self.file_tree.sortItems(
                                 0, Qt.SortOrder.AscendingOrder)
 
-    def create_maya_env(self):
-        """Parse the Maya.env file and create a new one for subprocess."""
-
-        maya_env = {}
-        with open(MAYA_ENV_PATH, 'r') as f:
-            for line in f:
-                if line.startswith('#'):
-                    continue
-                elif '=' in line:
-                    key, value = line.strip().split('=', 1)
-                    maya_env[key.strip()] = value.strip()
-        base_env = self.set_env()
-        maya_env.update(base_env)
-
-        return maya_env
-
     def set_env(self):
+        """Collect pipeline environment variables."""
         base_env = {}
         self.project = self.project_tree.currentItem().text(0)
         seq_shot_item = self.seq_shot_tree.currentItem()
@@ -260,13 +259,6 @@ class MainWindow(QMainWindow):
             self.shot = seq_shot_item.text(0)
             if seq_shot_item.parent():
                 self.sequence = seq_shot_item.parent().text(0)
-
-        os.environ['ROLE'] = self.role
-        os.environ['PROJECT_ROOT'] = self.root_path
-        os.environ['PUBLISH_ROOT'] = self.publish_root_path
-        os.environ['SHOW'] = self.project
-        os.environ['SEQ'] = self.sequence
-        os.environ['SHOT'] = self.shot
 
         base_env['ROLE'] = self.role
         base_env['PROJECT_ROOT'] = self.root_path
@@ -278,82 +270,70 @@ class MainWindow(QMainWindow):
         return base_env
 
     def launch_dcc(self):
+        """Launch DCC application using config-based DCC manager."""
+        if not self.role or self.role == 'select your role...':
+            msg_box = QMessageBox()
+            msg_box.setText('Please select a role (Maya/Houdini/Nuke)!')
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            return
 
-        maya_command = [
-            '/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya'
-        ]
-        maya_env = self.create_maya_env()
+        # Get DCC instance from manager
+        dcc = dcc_manager.get_dcc(self.role)
+        if not dcc:
+            msg_box = QMessageBox()
+            msg_box.setText(f'DCC "{self.role}" not configured!')
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            return
 
-        nuke_command = [
-            '/Applications/Nuke15.0v4/Nuke15.0v4.app/Contents/MacOS/Nuke15.0',
-            '--nukex'
-        ]
-
-        # /Applications/Houdini/Houdini19.5.752/Houdini FX 19.5.752.app/
-        # Contents/MacOS
-        houdini_command = [
-            ('/Applications/Houdini//Houdini20.0.625/Frameworks/'
-                'Houdini.framework/Versions/20.0/Resources/bin/houdinifx')
-        ]
+        # Get file path if a file is selected
         file_name = None
+        file_path = None
         if self.file_tree.topLevelItemCount() > 0:
-            file_name = self.file_tree.currentItem().text(0)
-        dcc_command = []
+            selected_item = self.file_tree.currentItem()
+            if selected_item:
+                file_name = selected_item.text(0)
+                file_path = os.path.join(self.file_path, file_name)
 
-        if file_name:
-            file_path = os.path.join(
-                self.file_path,
-                file_name
-            )
-            if self.role == 'maya':
-                maya_command.append('-file')
-                maya_command.append(file_path)
-                dcc_command = maya_command
-            elif self.role == 'houdini':
-                # self.set_h_env()
-                houdini_command.append(file_path)
-                dcc_command = houdini_command
-            elif self.role == 'nuke':
-                nuke_command.append(file_path)
-                dcc_command = nuke_command
-            else:
-                msg_box = QMessageBox()
-                msg_box.setText('Select a role!')
-                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.exec()
+        # Build environment context
+        env_context = {
+            'ROLE': self.role,
+            'PROJECT_ROOT': self.root_path,
+            'PUBLISH_ROOT': self.publish_root_path,
+            'SHOW': self.project,
+            'SEQ': self.sequence,
+            'SHOT': self.shot,
+        }
 
+        # Add JOB for Houdini
+        if self.role == 'houdini':
+            env_context['JOB'] = self.file_path
+
+        # Build command based on selection
+        if file_path and os.path.exists(file_path):
+            command = dcc.build_command(file_path=file_path)
         else:
-            if self.role == 'maya':
-                maya_command.append('-proj')
-                maya_command.append(self.file_path)  # type: ignore
-                dcc_command = maya_command
-            elif self.role == 'houdini':
-                # self.set_h_env()
-                os.putenv('JOB', self.file_path)  # type: ignore
-                dcc_command = houdini_command
+            command = dcc.build_command(project_path=self.file_path)
 
-            elif self.role == 'nuke':
-                nuke_command.append('-m')
-                nuke_command.append(self.file_path)  # type: ignore
-                dcc_command = nuke_command
-            else:
-                msg_box = QMessageBox()
-                msg_box.setText('Select a role!')
-                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.exec()
+        # Prepare environment
+        env = dcc.prepare_environment(**env_context)
 
-        if self.role == 'maya':
-            subprocess.Popen(dcc_command, env=maya_env)
-        else:
-            self.set_env()
-            subprocess.Popen(dcc_command)
+        # Launch
+        try:
+            subprocess.Popen(command, env=env)
+        except Exception as e:
+            msg_box = QMessageBox()
+            msg_box.setText(f'Failed to launch {dcc.name}: {e}')
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
 
 
+# Entry point for running directly (for development only)
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
 
-    # Only needed (sys.argv) for access to command line arguments
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

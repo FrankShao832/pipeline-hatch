@@ -1,23 +1,21 @@
-# ！/usr/bin/env python3
-
+#!/usr/bin/env python3
+"""Pipeline Launcher - Main entry point."""
 
 import sys
-from PySide6.QtWidgets import QApplication
-from ui.main_window import MainWindow
+
+from launcher.ui.main_window import MainWindow
 
 
 def main():
-    """_summary_
-    """
+    """Initialize and run the application."""
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
     app.setApplicationName("Y Pipeline")
 
-    # Create the main window.
     window = MainWindow()
     window.show()
 
-    #
     return app.exec()
 
 

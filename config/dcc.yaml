@@ -1,0 +1,43 @@
+# DCC Configuration
+# Digital Content Creation software settings
+
+dcc:
+  maya:
+    name: "Maya"
+    role: "maya"
+    app_name: "Maya2025.app"
+    executable: "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya"
+    env_file: "/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env"
+    flags:
+      file: "-file"
+      project: "-proj"
+
+  houdini:
+    name: "Houdini"
+    role: "houdini"
+    app_name: "Houdini FX 20.5.613.app"
+    executable: "/Applications/Houdini/Houdini20.5.613/Frameworks/Houdini.framework/Versions/20.5/Resources/bin/houdinifx"
+    env_vars:
+      JOB: ""  # Set dynamically at runtime
+    flags:
+      file: ""
+
+  nuke:
+    name: "Nuke"
+    role: "nuke"
+    app_name: "Nuke16.0v3.app"
+    executable: "/Applications/Nuke16.0v3/Nuke16.0v3.app/Contents/MacOS/Nuke16.0v3"
+    flags:
+      nukex: "--nukex"
+      file: ""
+      project: "-m"
+
+# Pipeline environment variables
+pipeline:
+  env_vars:
+    - ROLE
+    - PROJECT_ROOT
+    - PUBLISH_ROOT
+    - SHOW
+    - SEQ
+    - SHOT

@@ -1,0 +1,39 @@
+# Projects Configuration
+# Define project roots and publish paths
+
+# Example structure for future projects:
+# - name: "ShowA"
+#   root: "/Volumes/Projects/ShowA"
+#   publish_root: "/Volumes/Publish/ShowA"
+#   enabled: true
+
+projects:
+  - name: "Demo"
+    root: "/Volumes/Projects/y_pipeline_projects"
+    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "test_01"
+    root: "/Volumes/Projects/y_pipeline_projects"
+    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "test_02"
+    root: "/Volumes/Projects/y_pipeline_projects"
+    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    enabled: true
+
+
+# Default paths (used when no project is selected)
+defaults:
+  project_root: ""
+  publish_root: ""
+
+# Pipeline environment variable names
+pipeline_env:
+  role: "ROLE"
+  project_root: "PROJECT_ROOT"
+  publish_root: "PUBLISH_ROOT"
+  show: "SHOW"
+  seq: "SEQ"
+  shot: "SHOT"
