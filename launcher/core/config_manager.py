@@ -43,6 +43,16 @@ class ConfigManager:
             config = yaml.safe_load(f) or {}
 
         self._config_cache[filename] = config
+
+        # Import logger here to avoid circular imports
+        from launcher.utils.logger import logger
+        if filename == "dcc":
+            dcc_count = len(config.get("dcc", {}))
+            logger.debug(f"DCC config loaded: {dcc_count} applications")
+        elif filename == "projects":
+            project_count = len(config.get("projects", []))
+            logger.debug(f"Projects config loaded: {project_count} projects")
+
         return config
 
     def get_dcc_config(self) -> dict[str, Any]:
@@ -77,6 +87,8 @@ class ConfigManager:
 
     def reload(self):
         """Clear cache and reload all configurations."""
+        from launcher.utils.logger import logger
+        logger.info("Reloading all configurations")
         self._config_cache.clear()
 
 

@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, QFileSystemWatcher
 from launcher.core.config_manager import config_manager
 from launcher.core.dcc_manager import dcc_manager
 from launcher.ui.settings_window import SettingsPanel
+from launcher.utils.logger import logger
 
 
 def get_icon(icon_name: str) -> QIcon:
@@ -52,8 +53,9 @@ class MainWindow(QMainWindow):
                 first_proj = projects[0]
                 self.root_path = first_proj.get("root", "")
                 self.publish_root_path = first_proj.get("publish_root", "")
+                logger.info(f"Loaded {len(projects)} project(s)")
         except Exception as e:
-            print(f"Failed to load projects from config: {e}")
+            logger.error(f"Failed to load projects from config: {e}")
 
     def _setup_ui(self):
         self.setWindowTitle("Y Pipeline")
@@ -276,6 +278,7 @@ class MainWindow(QMainWindow):
             msg_box.setText('Please select a role (Maya/Houdini/Nuke)!')
             msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg_box.exec()
+            logger.warning("Launch attempted without selecting a role")
             return
 
         # Get DCC instance from manager
@@ -285,6 +288,7 @@ class MainWindow(QMainWindow):
             msg_box.setText(f'DCC "{self.role}" not configured!')
             msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg_box.exec()
+            logger.error(f"DCC not found in config: {self.role}")
             return
 
         # Get file path if a file is selected
@@ -322,7 +326,10 @@ class MainWindow(QMainWindow):
         # Launch
         try:
             subprocess.Popen(command, env=env)
+            logger.info(f"Launched {dcc.name}")
+            logger.debug(f"Command: {' '.join(command)}")
         except Exception as e:
+            logger.error(f"Failed to launch {dcc.name}: {e}", exc_info=True)
             msg_box = QMessageBox()
             msg_box.setText(f'Failed to launch {dcc.name}: {e}')
             msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
