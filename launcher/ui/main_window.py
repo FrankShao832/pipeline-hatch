@@ -10,11 +10,16 @@ from typing import Optional
 from PySide6.QtCore import Qt, QFileSystemWatcher
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QLabel, QTreeWidget, QTreeWidgetItem, QMessageBox, QDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLabel, QMessageBox, QDialog
 )
 
-from launcher.core.config_manager import config_manager
+from launcher.ui.widgets import (
+    RoleSelectorWidget,
+    ProjectTreeWidget,
+    SeqShotTreeWidget,
+    FileTreeWidget,
+)
 from launcher.core.dcc_manager import dcc_manager
 from launcher.ui.settings_window import SettingsPanel
 from launcher.utils.logger import logger
@@ -46,26 +51,7 @@ class MainWindow(QMainWindow):
         """
         super().__init__(parent)
         self._setup_ui()
-        self._load_projects_from_config()
-
-    def _load_projects_from_config(self) -> None:
-        """Load projects from YAML config automatically on startup."""
-        try:
-            projects = config_manager.get_project_list()
-            self.project_tree.clear()
-            for proj in projects:
-                if proj.get("enabled", True):
-                    project_item = QTreeWidgetItem(self.project_tree)
-                    project_item.setText(0, proj["name"])
-                    project_item.setData(0, Qt.ItemDataRole.UserRole, proj["root"])
-
-            if projects:
-                first_proj = projects[0]
-                self.root_path = first_proj.get("root", "")
-                self.publish_root_path = first_proj.get("publish_root", "")
-                logger.info(f"Loaded {len(projects)} project(s)")
-        except Exception as e:
-            logger.error(f"Failed to load projects from config: {e}")
+        self.project_tree.load_projects()
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
@@ -84,17 +70,10 @@ class MainWindow(QMainWindow):
         self.sequence: str = ""
         self.shot: str = ""
         self.file_watcher = QFileSystemWatcher(self)
+        self._watched_paths: set[str] = set()  # Track watched paths to avoid leaks
 
-        # Role selection
-        self.role_menu = QComboBox()
-        self.role_menu.setEditable(False)
-        self.role_menu.setFixedWidth(300)
-        self.role_menu.addItems([
-            'Select your role...',
-            'Maya',
-            'Houdini',
-            'Nuke'
-        ])
+        # Role selection - dynamically loaded from YAML config via RoleSelectorWidget
+        self.role_menu = RoleSelectorWidget()
 
         # Buttons
         self.launch_btn = QPushButton('Launch')
@@ -123,24 +102,23 @@ class MainWindow(QMainWindow):
 
         # Project tree
         self.project_label = QLabel('Project:')
-        self.project_tree = QTreeWidget()
-        self.project_tree.setHeaderHidden(True)
+        self.project_tree = ProjectTreeWidget()
         self.project_layout = QVBoxLayout()
         self.project_layout.addWidget(self.project_label)
         self.project_layout.addWidget(self.project_tree)
 
         # Sequence/Shot tree
         self.seq_shot_label = QLabel('Seq/Shot:')
-        self.seq_shot_tree = QTreeWidget()
-        self.seq_shot_tree.setHeaderHidden(True)
+        self.seq_shot_tree = SeqShotTreeWidget()
+        self.seq_shot_tree.set_file_watcher(self.file_watcher)
         self.seq_shot_layout = QVBoxLayout()
         self.seq_shot_layout.addWidget(self.seq_shot_label)
         self.seq_shot_layout.addWidget(self.seq_shot_tree)
 
         # File tree
         self.file_label = QLabel('File:')
-        self.file_tree = QTreeWidget()
-        self.file_tree.setHeaderHidden(True)
+        self.file_tree = FileTreeWidget()
+        self.file_tree.set_file_watcher(self.file_watcher)
         self.file_layout = QVBoxLayout()
         self.file_layout.addWidget(self.file_label)
         self.file_layout.addWidget(self.file_tree)
@@ -161,11 +139,21 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         """Connect UI signals to slots."""
         self.settings_btn.clicked.connect(self._open_settings)
-        self.project_tree.itemClicked.connect(self._on_project_selected)
-        self.seq_shot_tree.itemClicked.connect(self._on_seq_shot_selected)
-        self.role_menu.currentIndexChanged.connect(self._on_role_changed)
+        self.project_tree.project_selected.connect(self._on_project_selected)
+        self.seq_shot_tree.shot_selected.connect(self._on_shot_selected)
+        self.role_menu.role_changed.connect(self._on_role_changed)
         self.file_watcher.directoryChanged.connect(self._on_directory_changed)
         self.launch_btn.clicked.connect(self._launch_dcc)
+
+    def _watch_path(self, path: str) -> None:
+        """Add a path to the file watcher, avoiding duplicate watches.
+
+        Args:
+            path: Directory path to watch for changes.
+        """
+        if path and path not in self._watched_paths:
+            self.file_watcher.addPath(path)
+            self._watched_paths.add(path)
 
     def _open_settings(self) -> None:
         """Open settings dialog for manual path override."""
@@ -174,116 +162,74 @@ class MainWindow(QMainWindow):
             self.root_path = settings_panel.root_path_value.text()
             self.publish_root_path = settings_panel.publish_root_value.text()
             if self.root_path:
-                self.file_watcher.addPath(self.root_path)
+                self._watch_path(self.root_path)
 
-    def _on_project_selected(self, item: QTreeWidgetItem, column: int) -> None:
+    def _on_project_selected(self, name: str, root: str) -> None:
         """Handle project tree item selection.
 
         Args:
-            item: Selected tree item.
-            column: Column index (unused).
+            name: Project name.
+            root: Project root path.
         """
-        del column  # Unused
-        self._load_seq_shot(item)
+        self.root_path = root
+        self.project = name
+        self._load_seq_shot(name, root)
 
-    def _load_seq_shot(self, item: QTreeWidgetItem) -> None:
-        """Load sequence and shot structure for selected project.
+    def _load_seq_shot(self, project_name: str, project_root: str) -> None:
+        """Load sequence and shot structure via SeqShotTreeWidget.
 
         Args:
-            item: Project tree item.
+            project_name: Name of the selected project.
+            project_root: Root path of the selected project.
         """
-        project_name = item.text(0)
-        project_root = item.data(0, Qt.ItemDataRole.UserRole) or self.root_path
-
         if not project_root:
             return
-
-        project_path = os.path.join(project_root, project_name)
         self.root_path = project_root
         self.project = project_name
+        self._watch_path(os.path.join(project_root, project_name))
+        self.seq_shot_tree.load_for_project(project_root, project_name)
 
-        self.file_watcher.addPath(project_path)
-
-        seq_list = sorted([
-            p for p in os.listdir(project_path)
-            if os.path.isdir(os.path.join(project_path, p))
-        ])
-
-        self.seq_shot_tree.clear()
-        for seq in seq_list:
-            seq_item = QTreeWidgetItem(self.seq_shot_tree)
-            seq_item.setText(0, seq)
-            shot_path = os.path.join(project_path, seq)
-            self.file_watcher.addPath(shot_path)
-
-            for shot in os.listdir(shot_path):
-                if os.path.isdir(os.path.join(shot_path, shot)):
-                    shot_item = QTreeWidgetItem(seq_item)
-                    shot_item.setText(0, shot)
-
-        self.seq_shot_tree.sortItems(0, Qt.SortOrder.AscendingOrder)
-
-    def _on_seq_shot_selected(self, item: QTreeWidgetItem, column: int) -> None:
-        """Handle sequence/shot tree item selection.
+    def _on_shot_selected(self, seq: str, shot: str) -> None:
+        """Handle shot selection from the sequence/shot tree.
 
         Args:
-            item: Selected tree item.
-            column: Column index (unused).
+            seq: Sequence name.
+            shot: Shot name.
         """
-        del column  # Unused
+        self.sequence = seq
+        self.shot = shot
         self._load_files()
 
     def _load_files(self) -> None:
-        """Load files for selected sequence/shot."""
-        current_item = self.seq_shot_tree.currentItem()
-        if not current_item:
+        """Load files for selected sequence/shot via FileTreeWidget."""
+        if not self.sequence or not self.shot:
             return
 
-        parent_item = current_item.parent()
-        if not parent_item:
-            return
-
-        role_text = self.role_menu.currentText()
-        if role_text == 'Select your role...':
+        # Get role key from RoleSelectorWidget
+        role = self.role_menu.current_role()
+        if not role:
             self._show_info("Please select a role to load files")
             return
 
-        self.role = role_text.lower()
-        project_item = self.project_tree.currentItem()
-        if not project_item:
-            return
-
-        self.file_tree.clear()
-        self.shot = current_item.text(0)
-        self.sequence = parent_item.text(0)
-
-        project_name = project_item.text(0)
+        self.role = role
         self.file_path = os.path.join(
             self.root_path,
-            project_name,
+            self.project,
             self.sequence,
             self.shot,
             self.role
         )
 
-        self.file_watcher.addPath(self.file_path)
+        self._watch_path(self.file_path)
+        self.file_tree.load_for_path(self.file_path)
 
-        if os.path.isdir(self.file_path):
-            for filename in os.listdir(self.file_path):
-                filepath = os.path.join(self.file_path, filename)
-                if os.path.isfile(filepath) and not filename.startswith('.'):
-                    file_item = QTreeWidgetItem(self.file_tree)
-                    file_item.setText(0, filename)
-
-            self.file_tree.sortItems(0, Qt.SortOrder.AscendingOrder)
-
-    def _on_role_changed(self, index: int) -> None:
+    def _on_role_changed(self, role: str) -> None:
         """Handle role menu selection change.
 
         Args:
-            index: Selected index (unused).
+            role: Selected role key (e.g. 'maya', 'houdini').
         """
-        del index  # Unused
+        self.role = role
         self._load_files()
 
     def _on_directory_changed(self, path: str) -> None:

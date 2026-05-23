@@ -5,9 +5,9 @@ dcc:
   maya:
     name: "Maya"
     role: "maya"
-    app_name: "Maya2025.app"
-    executable: "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya"
-    env_file: "/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env"
+    app_name: "Maya.app"
+    executable: "/Applications/Autodesk/maya2026/Maya.app/Contents/MacOS/Maya"
+    env_file: "/Users/frank/Library/Preferences/Autodesk/maya/2026/Maya.env"
     flags:
       file: "-file"
       project: "-proj"

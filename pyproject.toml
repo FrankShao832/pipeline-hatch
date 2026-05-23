@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "pipeline-launcher"
+version = "2.0.0"
+description = "Pipeline Launcher - A configuration-driven DCC application launcher for VFX/animation pipelines"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Pipeline Devs"},
+]
+keywords = ["pipeline", "dcc", "maya", "houdini", "nuke", "vfx", "launcher"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Graphics",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "PySide6>=6.5.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-qt>=4.0",
+    "pyright>=1.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Pipeline-Devs/pipeline_launcher"
+Repository = "https://github.com/Pipeline-Devs/pipeline_launcher.git"
+
+[project.scripts]
+pipeline-launcher = "launcher.main:main"
+
+[tool.setuptools.packages.find]
+include = ["launcher*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["launcher"]
+omit = [
+    "launcher/ui/imgs/*",
+    "launcher/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass",
+]
+
+[tool.pyright]
+include = ["launcher"]
+exclude = ["tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
