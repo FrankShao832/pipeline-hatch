@@ -86,33 +86,40 @@ class BaseDCC(ABC):
         """Check if DCC executable exists.
 
         Searches in order:
-        1. macOS /Applications/ .app bundle
-        2. Direct executable path
-        3. PATH environment variable (basename only)
+        1. Direct executable path (most reliable)
+        2. macOS /Applications/ .app bundle (flat layout, e.g. Maya.app)
+        3. macOS /Applications/ nested .app bundle (Foundry layout, e.g. Nuke16.0v3/Nuke16.0v3.app)
+        4. PATH environment variable (basename only)
 
         Returns:
             True if DCC is found, False otherwise.
         """
         system = platform.system()
 
-        # 1. macOS: Check /Applications/ for .app bundle
+        # 1. Direct executable path check (most reliable)
+        if self._executable:
+            if Path(self._executable).exists():
+                return True
+
+        # 2. macOS: Check /Applications/ for flat .app bundle
         if system == "Darwin" and self._app_name:
             app_path = Path(f"/Applications/{self._app_name}")
             if app_path.exists():
                 return True
 
-        # 2. Direct executable path check
-        if self._executable:
-            if Path(self._executable).exists():
-                return True
+            # 3. macOS: Search for nested .app bundles (Foundry-style layout)
+            # e.g. /Applications/Nuke16.0v3/Nuke16.0v3.app
+            for entry in Path("/Applications").iterdir():
+                if entry.is_dir():
+                    nested_app = entry / self._app_name
+                    if nested_app.exists():
+                        return True
+                    # Also check Contents/MacOS binary inside nested app
+                    macos_binary = nested_app / "Contents" / "MacOS"
+                    if macos_binary.exists():
+                        return True
 
-            # For macOS .app bundles, check Contents/MacOS binary
-            if system == "Darwin" and self._app_name:
-                macos_binary = Path(f"/Applications/{self._app_name}/Contents/MacOS")
-                if macos_binary.exists():
-                    return True
-
-        # 3. Check in PATH (for executables like "maya", "houdini", "nuke")
+        # 4. Check in PATH (for executables like "maya", "houdini", "nuke")
         return self.find_in_path() is not None
 
     def find_in_path(self) -> Optional[str]:

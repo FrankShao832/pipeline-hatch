@@ -26,7 +26,7 @@ dcc:
     name: "Nuke"
     role: "nuke"
     app_name: "Nuke16.0v3.app"
-    executable: "/Applications/Nuke16.0v3/Nuke16.0v3.app/Contents/MacOS/Nuke16.0v3"
+    executable: "/Applications/Nuke16.0v3/Nuke16.0v3.app/Contents/MacOS/Nuke16.0"
     flags:
       nukex: "--nukex"
       file: ""
