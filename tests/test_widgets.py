@@ -110,9 +110,10 @@ class TestProjectTreeWidget:
             # Simulate user click via the connected method
             widget._on_item_clicked(target, 0)
 
-        name, root = blocker.args
+        name, root, publish_root = blocker.args
         assert isinstance(name, str) and len(name) > 0
         assert isinstance(root, str) and len(root) > 0
+        assert isinstance(publish_root, str)
         # Name should not have ★ prefix
         assert not name.startswith(str(_STAR))
 

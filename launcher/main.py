@@ -1,10 +1,51 @@
 #!/usr/bin/env python3
 """Pipeline Launcher - Main entry point."""
 
+import getpass
 import sys
+from typing import Optional
 
 from launcher.ui.main_window import MainWindow
 from launcher.utils.logger import log_startup, log_shutdown
+from launcher.database.database import DatabaseManager
+from launcher.database.repository import UserRepo
+
+
+def _init_database() -> tuple[bool, Optional[object]]:
+    """Initialize database connection and detect/create the current user.
+
+    Returns:
+        Tuple of (db_connected, user_object_or_None).
+    """
+    db = DatabaseManager()
+    connected = db.connect()
+
+    if not connected:
+        from launcher.utils.logger import logger
+        logger.warning("Database unavailable — running in offline (YAML) mode")
+        return False, None
+
+    # Create tables if they don't exist (idempotent)
+    db.init_db()
+
+    # Detect or create the current system user
+    username = getpass.getuser()
+    try:
+        with db.get_session() as session:
+            repo = UserRepo(session)
+            user = repo.get_or_create(
+                username=username,
+                display_name=username.capitalize(),
+                role="admin",  # Default role; can be changed later
+            )
+            repo.update_last_login(username)
+            from launcher.utils.logger import logger
+            logger.info(f"User detected: {user.username} [{user.role}]")
+            return True, user
+    except Exception as exc:
+        from launcher.utils.logger import logger
+        logger.warning(f"User detection failed: {exc} — running in offline mode")
+        return True, None
 
 
 def main():
@@ -14,11 +55,14 @@ def main():
     # Initialize logging
     log_startup()
 
+    # Initialize database (graceful fallback on failure)
+    _db_connected, user = _init_database()
+
     try:
         app = QApplication(sys.argv)
         app.setApplicationName("Y Pipeline")
 
-        window = MainWindow()
+        window = MainWindow(user=user)
         window.show()
 
         return app.exec()

@@ -31,7 +31,7 @@ class ProjectTreeWidget(QTreeWidget):
             project item is clicked or auto-selected on startup.
     """
 
-    project_selected = Signal(str, str)
+    project_selected = Signal(str, str, str)  # (name, root_path, publish_root)
 
     def __init__(self, parent=None):
         """Initialize the project tree.
@@ -48,22 +48,47 @@ class ProjectTreeWidget(QTreeWidget):
     # ---- Public API ----
 
     def load_projects(self) -> None:
-        """Load and display projects from the YAML configuration.
+        """Load and display projects from DB (if connected) or YAML config.
 
-        Only projects with ``enabled: true`` (or missing enabled field)
-        are displayed. After loading, applies visual markers for the
-        default project and auto-selects it.
+        Only enabled projects are displayed. After loading, applies visual
+        markers for the default project and auto-selects it.
+
+        Each item stores ``(root_path, publish_root)`` as itemData so both
+        values are available when a project is selected.
         """
         try:
-            from launcher.core.config_manager import config_manager
+            projects: list[dict] = []
+            from launcher.database.database import DatabaseManager
 
-            projects = config_manager.get_project_list()
+            db = DatabaseManager()
+            if db.is_connected:
+                # Load from database
+                with db.get_session() as session:
+                    from launcher.database.repository import ProjectRepo
+                    from launcher.database.models import Project
+
+                    repo = ProjectRepo(session)
+                    for proj in repo.list_enabled():
+                        projects.append({
+                            "name": proj.name,
+                            "root": proj.root_path,
+                            "publish_root": proj.publish_root,
+                            "enabled": proj.enabled,
+                        })
+            else:
+                # Fallback to YAML config
+                from launcher.core.config_manager import config_manager
+
+                for proj in config_manager.get_project_list():
+                    if proj.get("enabled", True):
+                        projects.append(proj)
+
             self.clear()
             for proj in projects:
-                if proj.get("enabled", True):
-                    item = QTreeWidgetItem(self)
-                    item.setText(0, proj["name"])
-                    item.setData(0, Qt.ItemDataRole.UserRole, proj.get("root", ""))
+                item = QTreeWidgetItem(self)
+                item.setText(0, proj["name"])
+                item.setData(0, Qt.ItemDataRole.UserRole, proj.get("root", ""))
+                item.setData(1, Qt.ItemDataRole.UserRole, proj.get("publish_root", ""))
 
             # Apply default project visuals, reorder, and auto-select
             self._refresh_default_marker()
@@ -126,7 +151,8 @@ class ProjectTreeWidget(QTreeWidget):
             self.scrollToItem(default_item)
             # Emit signal so downstream trees (seq, shot, file) update
             root = default_item.data(0, Qt.ItemDataRole.UserRole) or ""
-            self.project_selected.emit(name, root)
+            publish = default_item.data(1, Qt.ItemDataRole.UserRole) or ""
+            self.project_selected.emit(name, root, publish)
 
     def _clear_default_project(self, item: QTreeWidgetItem) -> None:
         """Remove default project status.
@@ -216,7 +242,8 @@ class ProjectTreeWidget(QTreeWidget):
             self.setCurrentItem(item)
             self.scrollToItem(item)
             root = item.data(0, Qt.ItemDataRole.UserRole) or ""
-            self.project_selected.emit(default_name, root)
+            publish = item.data(1, Qt.ItemDataRole.UserRole) or ""
+            self.project_selected.emit(default_name, root, publish)
 
     # ---- Item click ----
 
@@ -233,4 +260,5 @@ class ProjectTreeWidget(QTreeWidget):
         display = item.text(0)
         name = display[len(_STAR):] if display.startswith(_STAR) else display
         root = item.data(0, Qt.ItemDataRole.UserRole) or ""
-        self.project_selected.emit(name, root)
+        publish = item.data(1, Qt.ItemDataRole.UserRole) or ""
+        self.project_selected.emit(name, root, publish)

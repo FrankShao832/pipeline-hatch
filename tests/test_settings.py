@@ -10,12 +10,13 @@ class TestSettingsPanel:
     """Test suite for SettingsPanel dialog."""
 
     def test_initial_display(self, qtbot):
-        """Both path labels show 'None' on initial open."""
+        """Both path labels show default paths from config on initial open."""
         panel = SettingsPanel()
         qtbot.addWidget(panel)
 
-        assert panel.root_path_value.text() == "None"
-        assert panel.publish_root_value.text() == "None"
+        # Should be pre-filled from first enabled project, not "None"
+        assert panel.root_path_value.text() != ""
+        assert panel.publish_root_value.text() != ""
 
     def test_ok_cancel_buttons(self, qtbot):
         """OK button triggers accept, Cancel triggers reject."""

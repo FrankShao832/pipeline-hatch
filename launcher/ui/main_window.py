@@ -23,6 +23,7 @@ from launcher.ui.widgets import (
 from launcher.core.dcc_manager import dcc_manager
 from launcher.ui.settings_window import SettingsPanel
 from launcher.utils.logger import logger
+from launcher.database.database import DatabaseManager
 
 
 def get_icon(icon_name: str) -> QIcon:
@@ -43,13 +44,15 @@ def get_icon(icon_name: str) -> QIcon:
 class MainWindow(QMainWindow):
     """The main window of pipeline launcher."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, user=None, parent: Optional[QWidget] = None) -> None:
         """Initialize the main window.
 
         Args:
+            user: Optional User object from database lookup.
             parent: Optional parent widget.
         """
         super().__init__(parent)
+        self._user = user
         self._setup_ui()
         self.project_tree.load_projects()
 
@@ -94,7 +97,19 @@ class MainWindow(QMainWindow):
 
         self.top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.top_left_layout.addWidget(self.role_menu)
+        # User info label (from DB, or offline mode)
+        self.user_label = QLabel()
+        self.user_label.setFont(self.launch_btn.font())  # Match Launch button font
+        if self._user:
+            self.user_label.setText(
+                f"User: {self._user.display_name or self._user.username} [{self._user.role}]"
+            )
+        else:
+            self.user_label.setText("Offline Mode")
+            self.user_label.setStyleSheet("color: #aa6600;")
+
         self.top_right_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.top_right_layout.addWidget(self.user_label)
         self.top_right_layout.addWidget(self.launch_btn)
         self.top_right_layout.addWidget(self.settings_btn)
         self.top_layout.addLayout(self.top_left_layout)
@@ -156,22 +171,41 @@ class MainWindow(QMainWindow):
             self._watched_paths.add(path)
 
     def _open_settings(self) -> None:
-        """Open settings dialog for manual path override."""
-        settings_panel = SettingsPanel()
+        """Open settings dialog for manual path override and DB project management."""
+        # Get a database session if available
+        db = DatabaseManager()
+        session = db.get_session() if db.is_connected else None
+
+        settings_panel = SettingsPanel(
+            db_session=session,
+            current_user=self._user,
+        )
+        # Refresh project tree and reselect when DB projects change
+        settings_panel.projects_changed.connect(
+            lambda: self.project_tree.load_projects()
+        )
+
         if settings_panel.exec() == int(QDialog.DialogCode.Accepted):
             self.root_path = settings_panel.root_path_value.text()
             self.publish_root_path = settings_panel.publish_root_value.text()
             if self.root_path:
                 self._watch_path(self.root_path)
 
-    def _on_project_selected(self, name: str, root: str) -> None:
+        # Clean up session
+        if session:
+            session.close()
+
+    def _on_project_selected(self, name: str, root: str,
+                              publish_root: str = "") -> None:
         """Handle project tree item selection.
 
         Args:
             name: Project name.
             root: Project root path.
+            publish_root: Optional publish root path.
         """
         self.root_path = root
+        self.publish_root_path = publish_root or self.publish_root_path
         self.project = name
         self._load_seq_shot(name, root)
 
