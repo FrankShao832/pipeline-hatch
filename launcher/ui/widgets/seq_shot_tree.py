@@ -53,6 +53,9 @@ class SeqShotTreeWidget(QTreeWidget):
         self._watch(project_path)
         self.clear()
 
+        if not os.path.isdir(project_path):
+            return
+
         seq_list = sorted([
             p for p in os.listdir(project_path)
             if os.path.isdir(os.path.join(project_path, p))
