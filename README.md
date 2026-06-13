@@ -1,4 +1,4 @@
-# Pipeline Launcher
+# Pipeline Hatch
 
 A configuration-driven DCC (Digital Content Creation) application launcher for VFX/animation pipelines. Built with PySide6.
 
@@ -31,8 +31,8 @@ A configuration-driven DCC (Digital Content Creation) application launcher for V
 
 ```bash
 # Clone the repository
-git clone https://github.com/Pipeline-Devs/pipeline_launcher.git
-cd pipeline_launcher
+git clone https://github.com/FrankShao832/pipeline-hatch.git
+cd pipeline-hatch
 
 # Install with pip (recommended)
 pip install -e .
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ```bash
 # Run the launcher
-pipeline-launcher
+pipeline-hatch
 
 # Or directly
 python launcher/main.py
@@ -112,7 +112,7 @@ projects:
 ## Project Structure
 
 ```
-pipeline_launcher/
+pipeline-hatch/
 ├── config/                    # YAML configuration files
 │   ├── dcc.yaml              # DCC application settings
 │   └── projects.yaml         # Project list and paths

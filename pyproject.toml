@@ -1,11 +1,11 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "pipeline-launcher"
+name = "pipeline-hatch"
 version = "2.0.0"
-description = "Pipeline Launcher - A configuration-driven DCC application launcher for VFX/animation pipelines"
+description = "Pipeline Hatch - A configuration-driven DCC application launcher for VFX/animation pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -37,8 +37,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Pipeline-Devs/pipeline_launcher"
-Repository = "https://github.com/Pipeline-Devs/pipeline_launcher.git"
+Homepage = "https://github.com/FrankShao832/pipeline-hatch"
+Repository = "https://github.com/FrankShao832/pipeline-hatch.git"
 
 [project.scripts]
 pipeline-launcher = "launcher.main:main"

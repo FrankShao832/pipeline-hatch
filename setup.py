@@ -35,9 +35,9 @@ OPTIONS = {
         "/usr/local/Caskroom/miniconda/base/lib/libffi.8.dylib",
     ],
     "plist": {
-        "CFBundleName": "Pipeline Launcher",
-        "CFBundleDisplayName": "Pipeline Launcher",
-        "CFBundleIdentifier": "com.pipeline.launcher",
+        "CFBundleName": "Pipeline Hatch",
+        "CFBundleDisplayName": "Pipeline Hatch",
+        "CFBundleIdentifier": "com.pipeline.hatch",
         "CFBundleVersion": "2.0.0",
         "CFBundleShortVersionString": "2.0.0",
         "NSHighResolutionCapable": True,

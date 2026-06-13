@@ -47,7 +47,7 @@ class TestMayaDCC:
         assert maya.role == "maya"
         assert maya.executable == "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya"
         assert maya.app_name == "Maya2025.app"
-        assert maya.env_file == "/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env"
+        assert maya.env_file == "~/Library/Preferences/Autodesk/maya/2025/Maya.env"
 
     def test_build_command_with_file(self, maya_config):
         """Test building command with file path."""
