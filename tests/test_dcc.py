@@ -32,7 +32,7 @@ class TestMayaDCC:
             "role": "maya",
             "executable": "/Applications/Autodesk/maya2025/Maya.app/Contents/MacOS/Maya",
             "app_name": "Maya2025.app",
-            "env_file": "/Users/frank/Library/Preferences/Autodesk/maya/2025/Maya.env",
+            "env_file": "~/Library/Preferences/Autodesk/maya/2025/Maya.env",
             "flags": {
                 "file": "-file",
                 "project": "-proj"

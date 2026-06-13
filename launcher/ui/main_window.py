@@ -29,15 +29,30 @@ from launcher.database.database import DatabaseManager
 def get_icon(icon_name: str) -> QIcon:
     """Load icon from imgs directory.
 
+    Searches in order:
+    1. Development path:  launcher/ui/imgs/{name}.png
+    2. py2app bundle:     Resources/imgs/{name}.png
+    3. py2app bundle:     Resources/launcher/ui/imgs/{name}.png
+
     Args:
         icon_name: Name of the icon file (without extension).
 
     Returns:
         QIcon object, empty QIcon if not found.
     """
-    icon_path = Path(__file__).parent / "imgs" / f"{icon_name}.png"
-    if icon_path.exists():
-        return QIcon(str(icon_path))
+    candidates = [
+        # Development path (relative to this file)
+        Path(__file__).parent / "imgs" / f"{icon_name}.png",
+        # py2app: ../../../../.. = Resources/
+        Path(__file__).parent.parent.parent.parent.parent
+        / "imgs" / f"{icon_name}.png",
+        # py2app (with prefix)
+        Path(__file__).parent.parent.parent.parent.parent
+        / "launcher" / "ui" / "imgs" / f"{icon_name}.png",
+    ]
+    for path in candidates:
+        if path.exists():
+            return QIcon(str(path))
     return QIcon()
 
 

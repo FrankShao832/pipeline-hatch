@@ -2,7 +2,7 @@
 
 A configuration-driven DCC (Digital Content Creation) application launcher for VFX/animation pipelines. Built with PySide6.
 
-> **Current Version:** 1.1.0  
+> **Current Version:** 2.0.0  
 > **Status:** Beta — actively developed
 
 ---

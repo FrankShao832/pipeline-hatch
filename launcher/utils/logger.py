@@ -36,9 +36,9 @@ class Logger:
 
     def _setup_logging(self):
         """Setup logging configuration."""
-        # Create logs directory
-        log_dir = Path(__file__).parent.parent.parent / "logs"
-        log_dir.mkdir(exist_ok=True)
+        # Use ~/Library/Logs/pipeline_launcher/ for both dev and bundled app
+        log_dir = Path.home() / "Library" / "Logs" / "pipeline_launcher"
+        log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create logger
         self._logger = logging.getLogger("pipeline_launcher")
