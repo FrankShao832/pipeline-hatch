@@ -3,12 +3,27 @@
 
 import getpass
 import sys
+from types import SimpleNamespace
 from typing import Optional
 
 from launcher.ui.main_window import MainWindow
 from launcher.utils.logger import log_startup, log_shutdown
 from launcher.database.database import DatabaseManager
 from launcher.database.repository import UserRepo
+
+
+def _make_offline_user():
+    """Create a minimal user-like object from the OS username.
+
+    Used when the database is unavailable so the UI can still
+    display the current user's name instead of just 'Offline Mode'.
+    """
+    username = getpass.getuser()
+    return SimpleNamespace(
+        username=username,
+        display_name=username.capitalize(),
+        role="offline",
+    )
 
 
 def _init_database() -> tuple[bool, Optional[object]]:
@@ -23,7 +38,7 @@ def _init_database() -> tuple[bool, Optional[object]]:
     if not connected:
         from launcher.utils.logger import logger
         logger.warning("Database unavailable — running in offline (YAML) mode")
-        return False, None
+        return False, _make_offline_user()
 
     # Create tables if they don't exist (idempotent)
     db.init_db()
