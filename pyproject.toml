@@ -41,7 +41,7 @@ Homepage = "https://github.com/FrankShao832/pipeline-hatch"
 Repository = "https://github.com/FrankShao832/pipeline-hatch.git"
 
 [project.scripts]
-pipeline-launcher = "launcher.main:main"
+pipeline-hatch = "launcher.main:main"
 
 [tool.setuptools.packages.find]
 include = ["launcher*"]
