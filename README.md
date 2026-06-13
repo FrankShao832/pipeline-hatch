@@ -186,15 +186,6 @@ The application follows a clean three-layer architecture:
 - **Template Method** — BaseDCC defines build_command() interface
 - **Configuration-Driven** — All settings in YAML, no hardcoded paths
 
----
-
-## Roadmap
-
-- [x] Phase 1: PySide6 migration, config-driven DCC launch
-- [x] Phase 2: Unit testing, code quality, cross-platform detection
-- [ ] Phase 3: Project management, UI component refactoring
-- [ ] Phase 4: DCC preferences, environment editor
-- [ ] Phase 5: CI/CD, UI testing, advanced features
 
 ---
 
