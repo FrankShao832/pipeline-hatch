@@ -35,7 +35,7 @@ class RoleSelectorWidget(QComboBox):
 
             dcc_config = config_manager.get_dcc_config()
             dcc_list = dcc_config.get("dcc", {})
-            self.addItem('Select your role...')
+            self.addItem('Select your dcc...')
             for role_key, role_config in dcc_list.items():
                 display_name = role_config.get("name", role_key.title())
                 self.addItem(display_name, userData=role_key)

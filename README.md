@@ -188,16 +188,6 @@ The application follows a clean three-layer architecture:
 
 ---
 
-## Roadmap
-
-- [x] Phase 1: PySide6 migration, config-driven DCC launch
-- [x] Phase 2: Unit testing, code quality, cross-platform detection
-- [ ] Phase 3: Project management, UI component refactoring
-- [ ] Phase 4: DCC preferences, environment editor
-- [ ] Phase 5: CI/CD, UI testing, advanced features
-
----
-
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.

@@ -65,7 +65,9 @@ def _init_database() -> tuple[bool, Optional[object]]:
 
 def main():
     """Initialize and run the application."""
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
+    from pathlib import Path
 
     # Initialize logging
     log_startup()
@@ -76,6 +78,11 @@ def main():
     try:
         app = QApplication(sys.argv)
         app.setApplicationName("Y Pipeline")
+
+        # Set application window icon from bundled .icns
+        icon_path = Path(__file__).parent / "ui" / "imgs" / "pipeline_hatch.icns"
+        if icon_path.exists():
+            app.setWindowIcon(QIcon(str(icon_path)))
 
         window = MainWindow(user=user)
         window.show()

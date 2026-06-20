@@ -22,23 +22,16 @@ class NukeDCC(BaseDCC):
         Returns:
             Command list for subprocess.
         """
-        # Use 'open' command on macOS for proper GUI app launching
-        if platform.system() == "Darwin" and self._app_name:
-            cmd = ["open", "-a", self._app_name]
-            if self._flags.get("nukex"):
-                cmd.extend(["--args", self._flags["nukex"]])
-            if file_path:
-                if not self._flags.get("nukex"):
-                    cmd.append("--args")
-                cmd.append(file_path)
-        else:
-            cmd = [self._executable]
-            if self._flags.get("nukex"):
-                cmd.append(self._flags["nukex"])
-            if file_path:
-                cmd.append(file_path)
-            elif project_path:
-                cmd.extend([self._flags.get("project", "-m"), project_path])
+        # Use direct executable path on all platforms.
+        # macOS: avoid ``open -a`` which strips PATH passed via env=
+        # and causes child processes (e.g. ffmpeg) to be unfindable.
+        cmd = [self._executable]
+        if self._flags.get("nukex"):
+            cmd.append(self._flags["nukex"])
+        if file_path:
+            cmd.append(file_path)
+        elif project_path:
+            cmd.extend([self._flags.get("project", "-m"), project_path])
 
         return cmd
 

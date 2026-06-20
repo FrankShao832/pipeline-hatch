@@ -16,7 +16,7 @@ dcc:
     name: "Houdini"
     role: "houdini"
     app_name: "Houdini FX 20.5.613.app"
-    executable: "/Applications/Houdini/Houdini20.5.613/Frameworks/Houdini.framework/Versions/20.5/Resources/bin/houdinifx"
+    executable: "/Applications/Houdini/Houdini20.5.613/Houdini FX 20.5.613.app/Contents/MacOS/houdinifx"
     env_vars:
       JOB: ""  # Set dynamically at runtime
     flags:
@@ -33,6 +33,8 @@ dcc:
       project: "-m"
 
 # Pipeline environment variables
+# Legacy names (SHOW/SEQ/SHOT/ROLE) kept for backward compatibility
+# PIPELINE_* names are the publisher's primary source (see publisher.core.constants)
 pipeline:
   env_vars:
     - ROLE
@@ -41,3 +43,9 @@ pipeline:
     - SHOW
     - SEQ
     - SHOT
+    - PIPELINE_PROJECT
+    - PIPELINE_SEQUENCE
+    - PIPELINE_SHOT
+    - PIPELINE_DEPARTMENT
+    - PIPELINE_USER
+    - PIPELINE_DCC

@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         # Get role key from RoleSelectorWidget
         role = self.role_menu.current_role()
         if not role:
-            self._show_info("Please select a role to load files")
+            self._show_info("Please select a dcc to load files")
             return
 
         self.role = role
@@ -321,8 +321,8 @@ class MainWindow(QMainWindow):
 
     def _launch_dcc(self) -> None:
         """Launch DCC application using config-based DCC manager."""
-        if not self.role or self.role == 'select your role...':
-            self._show_info('Please select a role (Maya/Houdini/Nuke)!')
+        if not self.role or self.role == 'select your dcc...':
+            self._show_info('Please select a dcc (Maya/Houdini/Nuke)!')
             logger.warning("Launch attempted without selecting a role")
             return
 
@@ -362,6 +362,8 @@ class MainWindow(QMainWindow):
                 return
 
         # Build environment context
+        # Both legacy (SHOW/SEQ/SHOT/ROLE) and new PIPELINE_* naming
+        # are set so publisher.dcc.houdini.publisher can pick up either.
         env_context: dict[str, str] = {
             'ROLE': self.role,
             'PROJECT_ROOT': self.root_path,
@@ -369,6 +371,13 @@ class MainWindow(QMainWindow):
             'SHOW': self.project,
             'SEQ': self.sequence,
             'SHOT': self.shot,
+            # New PIPELINE_* naming (primary source for publisher)
+            'PIPELINE_PROJECT': self.project,
+            'PIPELINE_SEQUENCE': self.sequence,
+            'PIPELINE_SHOT': self.shot,
+            'PIPELINE_DEPARTMENT': self.role,
+            'PIPELINE_USER': os.environ.get('USER', 'artist'),
+            'PIPELINE_DCC': self.role,
         }
 
         if self.role == 'houdini' and self.file_path:
@@ -380,7 +389,10 @@ class MainWindow(QMainWindow):
         else:
             command = dcc.build_command(project_path=self.file_path)
 
-        env = dcc.prepare_environment(**env_context)
+        # Merge pipeline env vars on top of current system environment,
+        # so the child process inherits PATH, HOME, HOUDINI_PATH, etc.
+        env = os.environ.copy()
+        env.update(dcc.prepare_environment(**env_context))
 
         try:
             subprocess.Popen(command, env=env)
