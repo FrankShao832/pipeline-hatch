@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "launcher"))
 
 from launcher.dcc.dcc_maya import MayaDCC
 from launcher.dcc.dcc_houdini import HoudiniDCC
+from launcher.dcc.dcc_katana import KatanaDCC
 from launcher.dcc.dcc_nuke import NukeDCC
 from launcher.core.config_manager import ConfigManager
 
@@ -214,6 +215,75 @@ class TestNukeDCC:
         )
 
         assert env["ROLE"] == "nuke"
+        assert env["PROJECT_ROOT"] == "/projects"
+        assert env["SHOW"] == "Demo"
+
+
+class TestKatanaDCC:
+    """Test suite for KatanaDCC."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Reset singleton before each test."""
+        ConfigManager._instance = None
+        ConfigManager._config_cache = {}
+        yield
+
+    @pytest.fixture
+    def katana_config(self):
+        """Sample Katana configuration."""
+        return {
+            "name": "Katana",
+            "role": "katana",
+            "app_name": "Katana7.0v2",
+            "executable": "/opt/Katana7.0v2/bin/katanaBin",
+            "flags": {
+                "file": ""
+            }
+        }
+
+    def test_properties(self, katana_config):
+        """Test KatanaDCC property access."""
+        katana = KatanaDCC(katana_config)
+
+        assert katana.name == "Katana"
+        assert katana.role == "katana"
+        assert katana.app_name == "Katana7.0v2"
+        assert katana.executable == "/opt/Katana7.0v2/bin/katanaBin"
+
+    def test_build_command_no_file(self, katana_config):
+        """Test building command without file."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command()
+
+        assert cmd == ["/opt/Katana7.0v2/bin/katanaBin"]
+
+    def test_build_command_with_file(self, katana_config):
+        """Test building command with file path."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command(file_path="/test/scene.katana")
+
+        assert katana.executable in cmd
+        assert "/test/scene.katana" in cmd
+
+    def test_build_command_project_ignored(self, katana_config):
+        """Katana has no -proj flag; project_path must not enter command."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command(project_path="/test/project")
+
+        assert cmd == ["/opt/Katana7.0v2/bin/katanaBin"]
+        assert "/test/project" not in cmd
+
+    def test_prepare_environment(self, katana_config):
+        """Test environment preparation."""
+        katana = KatanaDCC(katana_config)
+        env = katana.prepare_environment(
+            ROLE="katana",
+            PROJECT_ROOT="/projects",
+            SHOW="Demo"
+        )
+
+        assert env["ROLE"] == "katana"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 

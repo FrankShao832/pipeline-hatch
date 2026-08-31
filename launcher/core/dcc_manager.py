@@ -4,6 +4,7 @@ from typing import Optional
 
 from launcher.core.config_manager import config_manager
 from launcher.dcc.base_dcc import BaseDCC
+from launcher.dcc.dcc_katana import KatanaDCC
 from launcher.dcc.dcc_maya import MayaDCC
 from launcher.dcc.dcc_houdini import HoudiniDCC
 from launcher.dcc.dcc_nuke import NukeDCC
@@ -25,6 +26,7 @@ class DCCManager:
             "maya": MayaDCC,
             "houdini": HoudiniDCC,
             "nuke": NukeDCC,
+            "katana": KatanaDCC,
         }
 
     def get_dcc(self, role: str) -> Optional[BaseDCC]:

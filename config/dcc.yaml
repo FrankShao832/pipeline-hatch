@@ -32,6 +32,14 @@ dcc:
       file: ""
       project: "-m"
 
+  katana:
+    name: "Katana"
+    role: "katana"
+    app_name: "Katana7.0v2"
+    executable: "/opt/Katana7.0v2/bin/katanaBin"
+    flags:
+      file: ""
+
 # Pipeline environment variables
 # Legacy names (SHOW/SEQ/SHOT/ROLE) kept for backward compatibility
 # PIPELINE_* names are the publisher's primary source (see publisher.core.constants)
