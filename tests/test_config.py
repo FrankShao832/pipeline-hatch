@@ -122,3 +122,70 @@ class TestConfigManager:
         assert "ROLE" in env_vars
         assert "PROJECT_ROOT" in env_vars
         assert "SHOW" in env_vars
+
+class TestLocalOverride:
+    """Tests for config/local.yaml machine-local overrides."""
+
+    @pytest.fixture(autouse=True)
+    def reset_singleton(self):
+        ConfigManager._instance = None
+        ConfigManager._config_cache = {}
+        yield
+
+    def test_deep_merge_dict(self, tmp_path, monkeypatch):
+        """Dict sections (dcc) are deep-merged into the shared config."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+        (tmp_path / "local.yaml").write_text(
+            "dcc:\n"
+            "  houdini:\n"
+            "    executable: /opt/hfs20.5/bin/houdini\n"
+        )
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("dcc")
+        assert cfg["dcc"]["houdini"]["executable"] == "/opt/hfs20.5/bin/houdini"
+        # untouched sibling preserved
+        assert "nuke" in cfg["dcc"]
+
+    def test_replace_list(self, tmp_path, monkeypatch):
+        """List sections (projects) are replaced wholesale."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+        (tmp_path / "local.yaml").write_text(
+            "projects:\n"
+            "  - name: LinuxOnly\n"
+            "    root: /srv/share/dev/projects/x\n"
+            "    publish_root: /srv/share/dev/projects/y\n"
+            "    enabled: true\n"
+        )
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("projects")
+        assert [p["name"] for p in cfg["projects"]] == ["LinuxOnly"]
+
+    def test_no_local_file(self, tmp_path, monkeypatch):
+        """Without local.yaml, shared config loads unchanged."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("dcc")
+        assert "maya" in cfg["dcc"]
+        assert "houdini" in cfg["dcc"]
+        assert "nuke" in cfg["dcc"]

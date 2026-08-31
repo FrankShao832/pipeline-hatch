@@ -68,8 +68,18 @@ class ConfigManager:
                 with open(local_path, "r", encoding="utf-8") as f:
                     local = yaml.safe_load(f) or {}
                 section = local.get(filename)
-                if isinstance(section, dict) and section:
-                    config = _deep_merge(config, section)
+                if section is not None:
+                    if (
+                        isinstance(config.get(filename), dict)
+                        and isinstance(section, dict)
+                    ):
+                        # dict section (e.g. dcc): deep-merge into config[filename]
+                        config[filename] = _deep_merge(
+                            config[filename], section
+                        )
+                    else:
+                        # non-dict section (e.g. projects list): replace wholesale
+                        config[filename] = section
             except Exception:
                 # Local override must never break startup; log and continue.
                 from launcher.utils.logger import logger
