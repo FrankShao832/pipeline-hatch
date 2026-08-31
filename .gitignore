@@ -247,3 +247,7 @@ __marimo__/
 
 # Private notes / docs
 plan/
+
+# Local backup files (do not commit)
+*.bak.*
+*.bak

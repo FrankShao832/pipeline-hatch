@@ -8,19 +8,44 @@
 #   enabled: true
 
 projects:
+  - name: "CyberPunk"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "DragonLand"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "SpaceOdyssey"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    enabled: true
+
   - name: "Demo"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "Test"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
     enabled: true
 
   - name: "test_01"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
     enabled: true
 
   - name: "test_02"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "test_project"
+    root: "/Volumes/Development/projects/y_pipeline_projects"
+    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
     enabled: true
 
 

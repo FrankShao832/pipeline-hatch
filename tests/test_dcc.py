@@ -134,12 +134,9 @@ class TestHoudiniDCC:
         houdini = HoudiniDCC(houdini_config)
         cmd = houdini.build_command(file_path="/test/scene.hip")
 
-        if platform.system() == "Darwin":
-            assert "open" in cmd
-            assert "-a" in cmd
-            assert "Houdini FX 20.5.613.app" in cmd
-            assert "--args" in cmd
-            assert "/test/scene.hip" in cmd
+        # Direct executable path (not open -a) to preserve env vars
+        assert houdini.executable in cmd
+        assert "/test/scene.hip" in cmd
 
     def test_prepare_environment(self, houdini_config):
         """Test environment preparation with JOB."""
@@ -193,12 +190,11 @@ class TestNukeDCC:
         nuke = NukeDCC(nuke_config)
         cmd = nuke.build_command(project_path="/test/project")
 
-        if platform.system() == "Darwin":
-            assert "open" in cmd
-            assert "-a" in cmd
-            assert "Nuke16.0v3.app" in cmd
-            assert "--args" in cmd
-            assert "--nukex" in cmd
+        # Direct executable path (not open -a) to preserve env vars
+        assert nuke.executable in cmd
+        assert "--nukex" in cmd
+        assert "-m" in cmd
+        assert "/test/project" in cmd
 
     def test_build_command_with_file(self, nuke_config):
         """Test building command with file path."""

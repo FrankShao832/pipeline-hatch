@@ -30,7 +30,7 @@ class TestRoleSelectorWidget:
         qtbot.addWidget(widget)
 
         assert widget.count() >= 1
-        assert widget.itemText(0) == "Select your role..."
+        assert widget.itemText(0) == "Select your dcc..."
         assert widget.current_role() is None
 
     def test_select_role(self, qtbot):
