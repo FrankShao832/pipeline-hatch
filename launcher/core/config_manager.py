@@ -1,12 +1,31 @@
 """Configuration management module.
 
 Loads and manages YAML configuration files for DCC settings and project paths.
+Supports per-machine local overrides via ``config/local.yaml`` (git-ignored):
+any top-level section matching a config filename (e.g. ``dcc``, ``projects``)
+is deep-merged over the shared config, so each machine can point at its own
+DCC executables and project roots without forking the shared files.
 """
 
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge ``override`` into ``base`` (override wins)."""
+    merged = dict(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 class ConfigManager:
@@ -24,7 +43,7 @@ class ConfigManager:
         self._config_dir = Path(__file__).parent.parent.parent / "config"
 
     def _load_yaml(self, filename: str) -> dict[str, Any]:
-        """Load a YAML configuration file.
+        """Load a YAML configuration file, merged with machine-local overrides.
 
         Args:
             filename: Name of the YAML file (without .yaml extension).
@@ -41,6 +60,22 @@ class ConfigManager:
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
+
+        # ── Machine-local overrides (config/local.yaml, git-ignored) ──
+        local_path = self._config_dir / "local.yaml"
+        if local_path.exists():
+            try:
+                with open(local_path, "r", encoding="utf-8") as f:
+                    local = yaml.safe_load(f) or {}
+                section = local.get(filename)
+                if isinstance(section, dict) and section:
+                    config = _deep_merge(config, section)
+            except Exception:
+                # Local override must never break startup; log and continue.
+                from launcher.utils.logger import logger
+                logger.warning(
+                    f"Failed to apply local.yaml override for '{filename}'"
+                )
 
         self._config_cache[filename] = config
 
