@@ -1,0 +1,13 @@
+# Pipeline Hatch 启动器环境 — conda env create -p ./env -f environment.yml
+# (pyproject.toml dependencies 缺 sqlalchemy/psycopg2，此处为准)
+name: pipeline_hatch
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - pyside6>=6.5.0
+      - pyyaml>=6.0
+      - sqlalchemy>=2.0.0
+      - psycopg2-binary>=2.9.0
+      # dev: pytest pytest-qt pytest-cov pyright (可选)
