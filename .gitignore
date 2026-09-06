@@ -251,3 +251,6 @@ plan/
 # Local backup files (do not commit)
 *.bak.*
 *.bak
+
+# conda temp
+condaenv.*.requirements.txt
