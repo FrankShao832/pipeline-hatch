@@ -1,9 +1,9 @@
 """Houdini DCC implementation."""
 
-import os
-import platform
 from pathlib import Path
 from typing import Optional
+
+from launcher.core.config_manager import config_manager
 from .base_dcc import BaseDCC
 
 
@@ -45,6 +45,10 @@ class HoudiniDCC(BaseDCC):
         - HOUDINI_STARTUP_PYTHON: Path to publisher startup script (safety net)
         - Pipeline env vars from config (ROLE, SHOW, SEQ, etc.)
 
+        Tool paths follow the $DEV/tools/<repo> convention and are resolved
+        through the ConfigManager (env var first, repo-layout inference in
+        dev mode) — never via brittle ``__file__`` backtracking.
+
         Args:
             **kwargs: Pipeline context (ROLE, PROJECT_ROOT, SHOW, JOB, etc.)
 
@@ -62,28 +66,16 @@ class HoudiniDCC(BaseDCC):
         elif project_path := kwargs.get("project_path"):
             env["JOB"] = project_path
 
-        # Compute the pipeline_publisher directory path
-        publisher_root = (
-            Path(__file__).resolve().parent.parent.parent.parent
-            / "pipeline_publisher"
-        )
-        publisher_root_str = str(publisher_root)
-
         # --- PIPELINE_PUBLISHER_ROOT ---
-        # Used by pipeline_publisher.json's $PIPELINE_PUBLISHER variable
-        # in the hpath entry that points to this directory.
-        publisher_root_str = str(publisher_root)
-        env["PIPELINE_PUBLISHER"] = publisher_root_str
+        # $DEV/tools/pipeline/pipeline_publisher — used by
+        # pipeline_publisher.json's $PIPELINE_PUBLISHER variable in the hpath
+        # entry that points to this directory.
+        publisher_root = (
+            config_manager.dev_root / "tools" / "pipeline" / "pipeline_publisher"
+        )
+        env["PIPELINE_PUBLISHER"] = str(publisher_root)
 
         # --- HOUDINI_STARTUP_PYTHON (optional safety net) ---
-        # The menu is defined by MainMenuCommon.xml and loaded via the
-        # pipeline_publisher.json package. HOUDINI_STARTUP_PYTHON is an
-        # optional extra that ensures sys.path is set up.
-        startup_path = publisher_root / "scripts" / "python" / "startup.py"
-        if startup_path.exists():
-            env["HOUDINI_STARTUP_PYTHON"] = str(startup_path)
-
-        # --- HOUDINI_STARTUP_PYTHON (safety net) ---
         # The menu is driven by MainMenuCommon.xml, so HOUDINI_STARTUP_PYTHON
         # is only needed for additional initialization. If the file exists,
         # inject it as a safety net; if not, the menu still works via XML.

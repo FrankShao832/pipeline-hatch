@@ -1,13 +1,16 @@
 # DCC Configuration
 # Digital Content Creation software settings
+#
+# This shared file holds only PLATFORM-INDEPENDENT fields. Machine-specific
+# values (executable / app_name / env_file) are provided per machine by
+# config/local.yaml (git-ignored) — see config/local.yaml.example.
+# Values may use ${VAR} placeholders expanded at load time (e.g. ${DEV}).
 
 dcc:
   maya:
     name: "Maya"
     role: "maya"
-    app_name: "Maya.app"
-    executable: "/Applications/Autodesk/maya2026/Maya.app/Contents/MacOS/Maya"
-    env_file: "~/Library/Preferences/Autodesk/maya/2026/Maya.env"
+    # app_name / executable / env_file: see config/local.yaml (machine-local)
     flags:
       file: "-file"
       project: "-proj"
@@ -15,8 +18,7 @@ dcc:
   houdini:
     name: "Houdini"
     role: "houdini"
-    app_name: "Houdini FX 20.5.613.app"
-    executable: "/Applications/Houdini/Houdini20.5.613/Houdini FX 20.5.613.app/Contents/MacOS/houdinifx"
+    # app_name / executable: see config/local.yaml (machine-local)
     env_vars:
       JOB: ""  # Set dynamically at runtime
     flags:
@@ -25,8 +27,7 @@ dcc:
   nuke:
     name: "Nuke"
     role: "nuke"
-    app_name: "Nuke17.0v4.app"
-    executable: "/Applications/Nuke17.0v4/Nuke17.0v4.app/Contents/MacOS/Nuke17.0"
+    # app_name / executable: see config/local.yaml (machine-local)
     flags:
       nukex: "--nukex"
       file: ""
@@ -35,8 +36,8 @@ dcc:
   katana:
     name: "Katana"
     role: "katana"
-    app_name: "Katana7.0v2"
-    executable: "/opt/Katana7.0v2/bin/katanaBin"
+    # Linux-only DCC. app_name / executable live in the Linux machine's
+    # config/local.yaml; macOS launchers typically disable/hide it.
     flags:
       file: ""
 

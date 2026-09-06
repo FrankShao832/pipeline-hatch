@@ -1,15 +1,18 @@
 # Database Configuration
 # PostgreSQL connection settings for Pipeline Launcher
 #
-# Priority: environment variable > YAML file > hardcoded defaults
+# Priority: environment variable > YAML (shared + config/local.yaml) > defaults
 # Environment variable overrides:
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+#
+# Machine-specific values belong in config/local.yaml, NOT in this shared
+# file. `user` is intentionally NOT set here: it falls back to the OS account
+# ($USER / DB_USER env var), so the same file works on every machine.
 
 database:
   host: "localhost"
   port: 5432
   name: "pipeline_db"
-  user: "frank"      # Replace with your DB username
   password: ""                    # Override via DB_PASSWORD env var
   pool_size: 5
   max_overflow: 10

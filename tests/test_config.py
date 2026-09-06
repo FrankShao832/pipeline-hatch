@@ -1,6 +1,13 @@
-"""Tests for config_manager module."""
+"""Tests for config_manager module.
+
+Contract under test (2026-09-05 batch-1 parameterization):
+- shared YAML files hold platform-independent fields only;
+- DCC executable/app_name/env_file come from machine-local local.yaml;
+- ${VAR} placeholders (e.g. ${DEV}) are expanded after merging.
+"""
 
 import pytest
+import textwrap
 from pathlib import Path
 import sys
 
@@ -55,14 +62,16 @@ class TestConfigManager:
         assert "publish_root" in projects[0]
 
     def test_get_dcc_by_role(self):
-        """Test getting DCC config by role."""
+        """Test getting DCC config by role (platform-independent fields)."""
         manager = ConfigManager()
 
         maya_config = manager.get_dcc_by_role("maya")
         assert maya_config is not None
         assert maya_config["role"] == "maya"
-        assert "executable" in maya_config
-        assert "app_name" in maya_config
+        # Machine-specific fields come from local.yaml; only structure is
+        # guaranteed here.
+        assert "flags" in maya_config
+        assert "name" in maya_config
 
     def test_get_dcc_by_invalid_role(self):
         """Test getting DCC config with invalid role."""
@@ -99,7 +108,7 @@ class TestConfigManager:
         assert config1 == config2
 
     def test_dcc_config_structure(self):
-        """Test DCC config has expected structure."""
+        """Shared DCC config guarantees platform-independent structure only."""
         manager = ConfigManager()
         config = manager.get_dcc_config()
 
@@ -107,8 +116,6 @@ class TestConfigManager:
             dcc = config["dcc"][role]
             assert "name" in dcc
             assert "role" in dcc
-            assert "executable" in dcc
-            assert "app_name" in dcc
             assert "flags" in dcc
 
     def test_pipeline_env_vars(self):
@@ -122,6 +129,16 @@ class TestConfigManager:
         assert "ROLE" in env_vars
         assert "PROJECT_ROOT" in env_vars
         assert "SHOW" in env_vars
+
+    def test_database_config_has_no_hardcoded_user(self):
+        """Shared database.yaml must not hardcode a personal username."""
+        manager = ConfigManager()
+        config = manager.get_database_config()
+
+        assert "database" in config
+        db = config["database"]
+        assert "user" not in db or not db.get("user")
+
 
 class TestLocalOverride:
     """Tests for config/local.yaml machine-local overrides."""
@@ -141,9 +158,13 @@ class TestLocalOverride:
         shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
         shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
         (tmp_path / "local.yaml").write_text(
-            "dcc:\n"
-            "  houdini:\n"
-            "    executable: /opt/hfs20.5/bin/houdini\n"
+            textwrap.dedent(
+                """\
+                dcc:
+                  houdini:
+                    executable: /opt/hfs20.5/bin/houdini
+                """
+            )
         )
 
         mgr = ConfigManager()
@@ -152,6 +173,97 @@ class TestLocalOverride:
         assert cfg["dcc"]["houdini"]["executable"] == "/opt/hfs20.5/bin/houdini"
         # untouched sibling preserved
         assert "nuke" in cfg["dcc"]
+
+    def test_local_provides_machine_paths(self, tmp_path, monkeypatch):
+        """local.yaml supplies the executable/app_name shared YAML dropped."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+        (tmp_path / "local.yaml").write_text(
+            textwrap.dedent(
+                """\
+                dcc:
+                  maya:
+                    app_name: Maya2026.app
+                    executable: /Applications/Autodesk/maya2026/Maya.app/Contents/MacOS/Maya
+                """
+            )
+        )
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("dcc")
+        maya = cfg["dcc"]["maya"]
+        assert maya["app_name"] == "Maya2026.app"
+        assert maya["executable"].endswith("/Maya")
+        # other DCCs are untouched and still lack machine fields
+        assert "executable" not in cfg["dcc"]["nuke"]
+
+    def test_env_expansion_dev(self, tmp_path, monkeypatch):
+        """${DEV} placeholders expand from the environment after merging."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        monkeypatch.setenv("DEV", "/fake/dev/root")
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("projects")
+        root = cfg["projects"][0]["root"]
+        assert root.startswith("/fake/dev/root/projects/")
+        assert "${DEV}" not in root
+
+    def test_env_expansion_undefined_left_verbatim(self, tmp_path, monkeypatch):
+        """Unknown variables are left visible instead of collapsing."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        monkeypatch.delenv("DEV", raising=False)
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+        (tmp_path / "local.yaml").write_text(
+            textwrap.dedent(
+                """\
+                projects:
+                  - name: Tmp
+                    root: "${UNKNOWN_VAR}/projects/x"
+                    publish_root: "${UNKNOWN_VAR}/projects/y"
+                    enabled: true
+                """
+            )
+        )
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("projects")
+        root = cfg["projects"][0]["root"]
+        # left verbatim — visible misconfiguration rather than an empty path
+        assert "${UNKNOWN_VAR}" in root
+
+    def test_env_expansion_dev_inferred_when_unset(self, tmp_path, monkeypatch):
+        """Without DEV env, ${DEV} falls back to the inferred dev root."""
+        import shutil
+        from launcher.core.config_manager import ConfigManager
+
+        monkeypatch.delenv("DEV", raising=False)
+        src = Path(__file__).parent.parent / "config"
+        shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
+        shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
+
+        mgr = ConfigManager()
+        monkeypatch.setattr(mgr, "_config_dir", tmp_path)
+        cfg = mgr._load_yaml("projects")
+        root = cfg["projects"][0]["root"]
+        # expanded (dev-mode inference) rather than left as a literal
+        assert "${DEV}" not in root
+        assert root.startswith("/")
 
     def test_replace_list(self, tmp_path, monkeypatch):
         """List sections (projects) are replaced wholesale."""
@@ -162,11 +274,15 @@ class TestLocalOverride:
         shutil.copy(src / "dcc.yaml", tmp_path / "dcc.yaml")
         shutil.copy(src / "projects.yaml", tmp_path / "projects.yaml")
         (tmp_path / "local.yaml").write_text(
-            "projects:\n"
-            "  - name: LinuxOnly\n"
-            "    root: /srv/share/dev/projects/x\n"
-            "    publish_root: /srv/share/dev/projects/y\n"
-            "    enabled: true\n"
+            textwrap.dedent(
+                """\
+                projects:
+                  - name: LinuxOnly
+                    root: /srv/share/dev/projects/x
+                    publish_root: /srv/share/dev/projects/y
+                    enabled: true
+                """
+            )
         )
 
         mgr = ConfigManager()

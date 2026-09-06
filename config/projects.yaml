@@ -1,51 +1,51 @@
 # Projects Configuration
-# Define project roots and publish paths
-
-# Example structure for future projects:
-# - name: "ShowA"
-#   root: "/Volumes/Projects/ShowA"
-#   publish_root: "/Volumes/Publish/ShowA"
-#   enabled: true
+# Define project roots and publish paths.
+#
+# Paths use the ${DEV} placeholder (dev data root, resolved at load time):
+#   macOS: /Volumes/Development   →  ${DEV}/projects/y_pipeline_projects
+#   Linux: /srv/share/dev         →  ${DEV}/projects/y_pipeline_projects
+# Only override a project section in config/local.yaml when a machine truly
+# needs a different layout (list sections replace the shared list wholesale).
 
 projects:
   - name: "CyberPunk"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "DragonLand"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "SpaceOdyssey"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "Demo"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "Test"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "test_01"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "test_02"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
   - name: "test_project"
-    root: "/Volumes/Development/projects/y_pipeline_projects"
-    publish_root: "/Volumes/Development/projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
 

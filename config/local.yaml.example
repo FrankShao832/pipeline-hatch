@@ -1,0 +1,52 @@
+# =============================================================================
+# Machine-local configuration template
+# -----------------------------------------------------------------------------
+# Copy this file to `local.yaml` on EACH machine and fill in machine-specific
+# values. local.yaml is git-ignored, so these values never leak into the
+# shared repo or a packaged bundle.
+#
+# Loading rules (see launcher/core/config_manager.py):
+#   * dict sections  (dcc, database) are DEEP-MERGED over the shared file;
+#   * list sections  (projects) REPLACE the shared list wholesale;
+#   * ${VAR} placeholders are expanded against the environment at load time
+#     (DEV is the dev-data root: macOS /Volumes/Development, Linux /srv/share/dev).
+#   * a broken/absent local.yaml never breaks startup.
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# macOS / 主力机
+# ─────────────────────────────────────────────────────────────────────────────
+dcc:
+  maya:
+    app_name: "Maya.app"
+    executable: "/Applications/Autodesk/maya2026/Maya.app/Contents/MacOS/Maya"
+    env_file: "~/Library/Preferences/Autodesk/maya/2026/Maya.env"
+  houdini:
+    app_name: "Houdini FX 20.5.613.app"
+    executable: "/Applications/Houdini/Houdini20.5.613/Houdini FX 20.5.613.app/Contents/MacOS/houdinifx"
+  nuke:
+    app_name: "Nuke17.0v4.app"
+    executable: "/Applications/Nuke17.0v4/Nuke17.0v4.app/Contents/MacOS/Nuke17.0"
+  # katana is Linux-only; omit it on macOS (executable_exists() fails cleanly).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Linux / 备用机 (uncomment and adjust on the backup machine)
+# ─────────────────────────────────────────────────────────────────────────────
+# dcc:
+#   katana:
+#     app_name: "Katana7.0v2"
+#     executable: "/opt/Katana7.0v2/bin/katanaBin"
+#   houdini:
+#     app_name: "Houdini FX 20.5"
+#     executable: "/opt/hfs20.5/bin/houdinifx"
+
+# database:          # only the fields that differ from the shared file
+#   user: "frank"
+#   host: "192.168.1.10"
+
+# projects:          # list section — replaces the shared list wholesale;
+#                     # prefer ${DEV} placeholders in the shared file instead
+#   - name: LinuxDemo
+#     root: "${DEV}/projects/y_pipeline_projects"
+#     publish_root: "${DEV}/projects/y_pipeline_publish"
+#     enabled: true
