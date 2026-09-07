@@ -13,6 +13,11 @@ projects:
     publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
+  - name: "RainPool"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
   - name: "DragonLand"
     root: "${DEV}/projects/y_pipeline_projects"
     publish_root: "${DEV}/projects/y_pipeline_publish"
