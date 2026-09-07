@@ -102,8 +102,8 @@ Define project roots and publish paths:
 ```yaml
 projects:
   - name: "Demo"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 ```
 
