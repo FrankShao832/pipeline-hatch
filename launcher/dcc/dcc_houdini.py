@@ -42,10 +42,13 @@ class HoudiniDCC(BaseDCC):
         Injects:
         - JOB: Houdini project directory
         - PIPELINE_PUBLISHER: Publisher repo root (startup/menu/launcher resolve via it)
-        - HOUDINI_STARTUP_PYTHON: Publisher startup script — installs the
-          'Pipeline > Publish...' Qt menu at session start (primary path).
-          MainMenuCommon.xml is NOT auto-discovered: no Houdini package json
-          adds the publisher root to HOUDINI_PATH, so we don't inject it.
+        Menu note: the 'Pipeline > Publish...' menu is NOT installed here.
+        It comes from the package at
+        ~/Library/Preferences/houdini/20.5/packages/pipeline_publisher.json
+        whose hpath puts the publisher root on HOUDINI_PATH, so Houdini
+        merges its MainMenuCommon.xml natively. A Qt injection via
+        HOUDINI_STARTUP_PYTHON was tried and removed (2026-09-08): Houdini
+        20.5's menu bar is not reliably editable via findChild(QMenuBar).
         - Pipeline env vars from config (ROLE, SHOW, SEQ, etc.)
 
         Tool paths follow the $DEV/tools/<repo> convention and are resolved
@@ -76,13 +79,6 @@ class HoudiniDCC(BaseDCC):
             config_manager.dev_root / "tools" / "pipeline" / "pipeline_publisher"
         )
         env["PIPELINE_PUBLISHER"] = str(publisher_root)
-
-        # --- HOUDINI_STARTUP_PYTHON (menu installation, primary path) ---
-        # scripts/python/startup.py imports publisher.dcc.houdini.menu and
-        # schedules the Qt 'Pipeline > Publish...' menu once the UI is ready.
-        startup_path = publisher_root / "scripts" / "python" / "startup.py"
-        if startup_path.exists():
-            env["HOUDINI_STARTUP_PYTHON"] = str(startup_path)
 
         # --- Pipeline environment variables from config ---
         for key in self.get_pipeline_env_keys():
