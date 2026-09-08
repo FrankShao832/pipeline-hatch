@@ -383,6 +383,9 @@ class MainWindow(QMainWindow):
             'DCC': self.role,
             'DEPARTMENT': self.task,
             'CACHE_ROOT': cache_root,
+            # Houdini's bundled python has no pyyaml, so publisher.yaml cannot
+            # load there — the launcher enables the publisher DB mode via env.
+            'PUBLISHER_ENABLE_DATABASE': 'true',
             'PROJECT_ROOT': self.root_path,
             'PUBLISH_ROOT': self.publish_root_path,
             'SHOW': self.project,
