@@ -11,3 +11,5 @@ __all__ = [
     "SeqShotTreeWidget",
     "FileTreeWidget",
 ]
+
+from launcher.ui.widgets.task_selector import TaskSelectorWidget

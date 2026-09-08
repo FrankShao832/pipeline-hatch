@@ -39,7 +39,7 @@ class NukeDCC(BaseDCC):
         """Prepare environment for Nuke launch.
 
         Args:
-            **kwargs: Pipeline context (ROLE, PROJECT_ROOT, SHOW, etc.)
+            **kwargs: Pipeline context (DCC, DEPARTMENT, PROJECT_ROOT, SHOW, etc.)
 
         Returns:
             Environment variables dict.

@@ -49,10 +49,10 @@ class KatanaDCC(BaseDCC):
           pipeline_publisher path for Houdini), resolved through the
           ConfigManager. A missing directory logs a debug message instead
           of silently injecting a stale path.
-        - Pipeline env vars from config (ROLE, PROJECT_ROOT, SHOW, etc.)
+        - Pipeline env vars from config (DCC, DEPARTMENT, PROJECT_ROOT, SHOW, etc.)
 
         Args:
-            **kwargs: Pipeline context (ROLE, PROJECT_ROOT, SHOW, JOB, etc.)
+            **kwargs: Pipeline context (DCC, DEPARTMENT, PROJECT_ROOT, SHOW, JOB, etc.)
 
         Returns:
             Environment variables dict (overrides only).

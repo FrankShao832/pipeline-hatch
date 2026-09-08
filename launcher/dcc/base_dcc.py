@@ -194,7 +194,7 @@ class BaseDCC(ABC):
         """Prepare environment variables for DCC launch.
 
         Args:
-            kwargs: Additional environment context (ROLE, SHOW, etc.)
+            kwargs: Additional environment context (DCC, DEPARTMENT, SHOW, etc.)
 
         Returns:
             Dictionary of environment variables.

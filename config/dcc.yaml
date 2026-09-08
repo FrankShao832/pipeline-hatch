@@ -42,11 +42,20 @@ dcc:
       file: ""
 
 # Pipeline environment variables
-# Legacy names (SHOW/SEQ/SHOT/ROLE) kept for backward compatibility
+# DCC     = application to launch (houdini/maya/nuke/katana)
+# DEPARTMENT = task being worked on (fx/comp/lighting/...) — also drives the
+#              working directory <seq>/<shot>/<department> and CACHE_ROOT
 # PIPELINE_* names are the publisher's primary source (see publisher.core.constants)
 pipeline:
+  # Task vocabulary (working dirs + DEPARTMENT/PIPELINE_DEPARTMENT)
+  departments:
+    - fx
+    - comp
+    - lighting
   env_vars:
-    - ROLE
+    - DCC
+    - DEPARTMENT
+    - CACHE_ROOT
     - PROJECT_ROOT
     - PUBLISH_ROOT
     - SHOW
@@ -56,5 +65,5 @@ pipeline:
     - PIPELINE_SEQUENCE
     - PIPELINE_SHOT
     - PIPELINE_DEPARTMENT
-    - PIPELINE_USER
     - PIPELINE_DCC
+    - PIPELINE_USER

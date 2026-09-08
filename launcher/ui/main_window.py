@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from launcher.ui.widgets import (
     RoleSelectorWidget,
+    TaskSelectorWidget,
     ProjectTreeWidget,
     SeqShotTreeWidget,
     FileTreeWidget,
@@ -90,8 +91,12 @@ class MainWindow(QMainWindow):
         self.file_watcher = QFileSystemWatcher(self)
         self._watched_paths: set[str] = set()  # Track watched paths to avoid leaks
 
-        # Role selection - dynamically loaded from YAML config via RoleSelectorWidget
+        # DCC selection - which application to launch (RoleSelectorWidget reads dcc.yaml)
         self.role_menu = RoleSelectorWidget()
+
+        # Task selection - which department workdir (fx/comp/lighting) to open
+        self.task_menu = TaskSelectorWidget()
+        self.task: str = self.task_menu.current_task()
 
         # Buttons
         self.launch_btn = QPushButton('Launch')
@@ -112,6 +117,7 @@ class MainWindow(QMainWindow):
 
         self.top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.top_left_layout.addWidget(self.role_menu)
+        self.top_left_layout.addWidget(self.task_menu)
         # User info label (from DB, or offline mode)
         self.user_label = QLabel()
         self.user_label.setFont(self.launch_btn.font())  # Match Launch button font
@@ -172,6 +178,7 @@ class MainWindow(QMainWindow):
         self.project_tree.project_selected.connect(self._on_project_selected)
         self.seq_shot_tree.shot_selected.connect(self._on_shot_selected)
         self.role_menu.role_changed.connect(self._on_role_changed)
+        self.task_menu.task_changed.connect(self._on_task_changed)
         self.file_watcher.directoryChanged.connect(self._on_directory_changed)
         self.launch_btn.clicked.connect(self._launch_dcc)
 
@@ -250,36 +257,37 @@ class MainWindow(QMainWindow):
         self._load_files()
 
     def _load_files(self) -> None:
-        """Load files for selected sequence/shot via FileTreeWidget."""
+        """Load files for the selected sequence/shot/task workdir."""
         if not self.sequence or not self.shot:
             return
 
-        # Get role key from RoleSelectorWidget
-        role = self.role_menu.current_role()
-        if not role:
-            self._show_info("Please select a dcc to load files")
+        # Workdir is task-based: <root>/<show>/<seq>/<shot>/<department>
+        task = self.task_menu.current_task()
+        if not task:
+            self._show_info("Please select a task (fx/comp/lighting) first")
             return
 
-        self.role = role
+        self.task = task
         self.file_path = os.path.join(
             self.root_path,
             self.project,
             self.sequence,
             self.shot,
-            self.role
+            self.task
         )
 
         self._watch_path(self.file_path)
         self.file_tree.load_for_path(self.file_path)
 
     def _on_role_changed(self, role: str) -> None:
-        """Handle role menu selection change.
-
-        Args:
-            role: Selected role key (e.g. 'maya', 'houdini').
-        """
+        """Handle DCC (role) selection change — launch target only."""
         self.role = role
-        self._load_files()
+
+    def _on_task_changed(self, task: str) -> None:
+        """Handle task selection change — reload the task workdir files."""
+        self.task = task
+        if self.sequence and self.shot:
+            self._load_files()
 
     def _on_directory_changed(self, path: str) -> None:
         """Handle directory change event.
@@ -362,10 +370,19 @@ class MainWindow(QMainWindow):
                 return
 
         # Build environment context
-        # Both legacy (SHOW/SEQ/SHOT/ROLE) and new PIPELINE_* naming
-        # are set so publisher.dcc.houdini.publisher can pick up either.
+        # DCC = application (houdini/maya/...), DEPARTMENT = task (fx/comp/...).
+        # Legacy ROLE removed (2026-09-08) — renamed to DCC for clarity.
+        cache_root = (
+            os.path.join(
+                os.path.dirname(os.path.dirname(self.root_path)),
+                "cache", self.project
+            )
+            if self.root_path else ""
+        )
         env_context: dict[str, str] = {
-            'ROLE': self.role,
+            'DCC': self.role,
+            'DEPARTMENT': self.task,
+            'CACHE_ROOT': cache_root,
             'PROJECT_ROOT': self.root_path,
             'PUBLISH_ROOT': self.publish_root_path,
             'SHOW': self.project,
@@ -375,7 +392,7 @@ class MainWindow(QMainWindow):
             'PIPELINE_PROJECT': self.project,
             'PIPELINE_SEQUENCE': self.sequence,
             'PIPELINE_SHOT': self.shot,
-            'PIPELINE_DEPARTMENT': self.role,
+            'PIPELINE_DEPARTMENT': self.task,
             'PIPELINE_USER': os.environ.get('USER', 'artist'),
             'PIPELINE_DCC': self.role,
         }

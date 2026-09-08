@@ -61,7 +61,9 @@ defaults:
 
 # Pipeline environment variable names
 pipeline_env:
-  role: "ROLE"
+  dcc: "DCC"
+  department: "DEPARTMENT"
+  cache_root: "CACHE_ROOT"
   project_root: "PROJECT_ROOT"
   publish_root: "PUBLISH_ROOT"
   show: "SHOW"

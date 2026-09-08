@@ -126,7 +126,7 @@ class TestConfigManager:
         assert "pipeline" in config
         assert "env_vars" in config["pipeline"]
         env_vars = config["pipeline"]["env_vars"]
-        assert "ROLE" in env_vars
+        assert {"DCC", "DEPARTMENT", "CACHE_ROOT"} <= set(env_vars)
         assert "PROJECT_ROOT" in env_vars
         assert "SHOW" in env_vars
 

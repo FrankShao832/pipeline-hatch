@@ -254,3 +254,6 @@ plan/
 
 # conda temp
 condaenv.*.requirements.txt
+
+# PyInstaller app backups (machine-local, never commit)
+dist_backup*/

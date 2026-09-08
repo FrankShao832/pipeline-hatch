@@ -88,12 +88,12 @@ class TestMayaDCC:
         """Test environment preparation."""
         maya = MayaDCC(maya_config)
         env = maya.prepare_environment(
-            ROLE="maya",
+            DCC="maya",
             PROJECT_ROOT="/projects",
             SHOW="Demo"
         )
 
-        assert env["ROLE"] == "maya"
+        assert env["DCC"] == "maya"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 
@@ -144,12 +144,12 @@ class TestHoudiniDCC:
         houdini = HoudiniDCC(houdini_config)
         env = houdini.prepare_environment(
             JOB="/test/jobs",
-            ROLE="houdini",
+            DCC="houdini",
             SHOW="Demo"
         )
 
         assert env["JOB"] == "/test/jobs"
-        assert env["ROLE"] == "houdini"
+        assert env["DCC"] == "houdini"
         assert env["SHOW"] == "Demo"
 
 
@@ -209,12 +209,12 @@ class TestNukeDCC:
         """Test environment preparation."""
         nuke = NukeDCC(nuke_config)
         env = nuke.prepare_environment(
-            ROLE="nuke",
+            DCC="nuke",
             PROJECT_ROOT="/projects",
             SHOW="Demo"
         )
 
-        assert env["ROLE"] == "nuke"
+        assert env["DCC"] == "nuke"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 
@@ -278,12 +278,12 @@ class TestKatanaDCC:
         """Test environment preparation."""
         katana = KatanaDCC(katana_config)
         env = katana.prepare_environment(
-            ROLE="katana",
+            DCC="katana",
             PROJECT_ROOT="/projects",
             SHOW="Demo"
         )
 
-        assert env["ROLE"] == "katana"
+        assert env["DCC"] == "katana"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 

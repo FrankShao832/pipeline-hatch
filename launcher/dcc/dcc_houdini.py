@@ -56,7 +56,7 @@ class HoudiniDCC(BaseDCC):
         dev mode) — never via brittle ``__file__`` backtracking.
 
         Args:
-            **kwargs: Pipeline context (ROLE, PROJECT_ROOT, SHOW, JOB, etc.)
+            **kwargs: Pipeline context (DCC, DEPARTMENT, PROJECT_ROOT, SHOW, JOB, etc.)
 
         Returns:
             Environment variables dict (overrides only).
