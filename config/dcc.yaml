@@ -31,7 +31,12 @@ dcc:
     flags:
       nukex: "--nukex"
       file: ""
-      project: "-m"
+      # No project-directory flag exists in Nuke: "-m n" means "max concurrent
+      # render threads" (see `Nuke --help`), so passing a path there crashes
+      # Nuke 17 at startup (SIGSEGV in libstudio, 2026-10-25). The working
+      # directory is delivered via the process cwd instead — see
+      # NukeDCC.launch_cwd().
+      project: ""
 
   katana:
     name: "Katana"
@@ -48,10 +53,16 @@ dcc:
 # PIPELINE_* names are the publisher's primary source (see publisher.core.constants)
 pipeline:
   # Task vocabulary (working dirs + DEPARTMENT/PIPELINE_DEPARTMENT)
+  # Canonical department vocabulary (see docs/VOCABULARY.md): the department is
+  # the data axis — it names the shot work folder and travels as DEPARTMENT.
   departments:
+    - model
+    - rig
+    - anim
+    - layout
     - fx
-    - comp
     - lighting
+    - comp
   env_vars:
     - DCC
     - DEPARTMENT
@@ -68,3 +79,7 @@ pipeline:
     - PIPELINE_DEPARTMENT
     - PIPELINE_DCC
     - PIPELINE_USER
+    # Dev data root + its sibling roots (2026-09-19)
+    - DEV
+    - ASSET_ROOT
+    - RENDER_ROOT

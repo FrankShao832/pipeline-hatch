@@ -11,12 +11,12 @@ from PySide6.QtCore import Qt, QFileSystemWatcher
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QMessageBox, QDialog
+    QLabel, QMessageBox
 )
 
 from launcher.ui.widgets import (
     RoleSelectorWidget,
-    TaskSelectorWidget,
+    DepartmentSelectorWidget,
     ProjectTreeWidget,
     SeqShotTreeWidget,
     FileTreeWidget,
@@ -24,7 +24,44 @@ from launcher.ui.widgets import (
 from launcher.core.dcc_manager import dcc_manager
 from launcher.ui.settings_window import SettingsPanel
 from launcher.utils.logger import logger
-from launcher.database.database import DatabaseManager
+
+
+def resolve_workdir(shot_dir: str, dcc: str = "", department: str = "") -> str:
+    """Pick the workdir for a shot, department first.
+
+    The department is the data axis and owns the work folder; the DCC is the
+    runtime choice that opens it (see docs/VOCABULARY.md). Resolution order,
+    most specific first:
+
+    1. ``<shot>/<department>/<dcc>`` — a department that uses several apps
+       (``fx/houdini``, ``comp/nuke``): department outside, dcc inside;
+    2. ``<shot>/<department>`` — the normal single-app department folder;
+    3. ``<shot>/<dcc>`` — legacy app-named trees (``<shot>/nuke``), kept
+       launchable until every tree is migrated;
+    4. ``<shot>/<department>`` even when missing, so the caller can report the
+       folder it actually expected.
+
+    Args:
+        shot_dir: ``<root>/<show>/<seq>/<shot>`` (may be empty).
+        dcc: Selected DCC (``nuke`` / ``maya`` / ``houdini``).
+        department: Selected department token (``fx`` / ``comp`` / ``lighting``).
+
+    Returns:
+        Absolute workdir path, or the department path when nothing exists yet.
+    """
+    if not shot_dir:
+        return ""
+    candidates = []
+    if department and dcc:
+        candidates.append(os.path.join(shot_dir, department, dcc))
+    if department:
+        candidates.append(os.path.join(shot_dir, department))
+    if dcc:
+        candidates.append(os.path.join(shot_dir, dcc))
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.join(shot_dir, department) if department else shot_dir
 
 
 def get_icon(icon_name: str) -> QIcon:
@@ -69,12 +106,14 @@ class MainWindow(QMainWindow):
         """
         super().__init__(parent)
         self._user = user
+        # Modeless settings window: one instance, created on first use (T06).
+        self._settings_win: Optional[SettingsPanel] = None
         self._setup_ui()
         self.project_tree.load_projects()
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
-        self.setWindowTitle("Y Pipeline")
+        self.setWindowTitle("Pipeline Hatch")
         self.resize(1000, 600)
 
         central_widget = QWidget()
@@ -94,9 +133,10 @@ class MainWindow(QMainWindow):
         # DCC selection - which application to launch (RoleSelectorWidget reads dcc.yaml)
         self.role_menu = RoleSelectorWidget()
 
-        # Task selection - which department workdir (fx/comp/lighting) to open
-        self.task_menu = TaskSelectorWidget()
-        self.task: str = self.task_menu.current_task()
+        # Department selection - whose workdir (fx/comp/lighting) to open.
+        # The department is the data axis; the DCC above is only the runtime.
+        self.department_menu = DepartmentSelectorWidget()
+        self.department: str = self.department_menu.current_department()
 
         # Buttons
         self.launch_btn = QPushButton('Launch')
@@ -116,8 +156,11 @@ class MainWindow(QMainWindow):
         self.top_right_layout.setContentsMargins(0, 0, 0, 0)
 
         self.top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Department on the far left (the data axis); the DCC sits directly to
+        # its right with a fixed gap, so the pair reads as one context line.
+        self.top_left_layout.addWidget(self.department_menu)
+        self.top_left_layout.addSpacing(24)
         self.top_left_layout.addWidget(self.role_menu)
-        self.top_left_layout.addWidget(self.task_menu)
         # User info label (from DB, or offline mode)
         self.user_label = QLabel()
         self.user_label.setFont(self.launch_btn.font())  # Match Launch button font
@@ -178,7 +221,7 @@ class MainWindow(QMainWindow):
         self.project_tree.project_selected.connect(self._on_project_selected)
         self.seq_shot_tree.shot_selected.connect(self._on_shot_selected)
         self.role_menu.role_changed.connect(self._on_role_changed)
-        self.task_menu.task_changed.connect(self._on_task_changed)
+        self.department_menu.department_changed.connect(self._on_department_changed)
         self.file_watcher.directoryChanged.connect(self._on_directory_changed)
         self.launch_btn.clicked.connect(self._launch_dcc)
 
@@ -193,29 +236,28 @@ class MainWindow(QMainWindow):
             self._watched_paths.add(path)
 
     def _open_settings(self) -> None:
-        """Open settings dialog for manual path override and DB project management."""
-        # Get a database session if available
-        db = DatabaseManager()
-        session = db.get_session() if db.is_connected else None
+        """Open the settings window — modeless, one instance for the session.
 
-        settings_panel = SettingsPanel(
-            db_session=session,
-            current_user=self._user,
-        )
-        # Refresh project tree and reselect when DB projects change
-        settings_panel.projects_changed.connect(
-            lambda: self.project_tree.load_projects()
-        )
+        Settings apply immediately (no OK/Cancel transaction), so there is
+        nothing to read back when the window closes: the project tree and the
+        launch paths are kept in sync through ``projects_changed`` and
+        ``_on_project_selected``. A second click on the gear raises the window
+        that is already open instead of stacking another copy.
+        """
+        win = self._settings_win
+        if win is None:
+            win = SettingsPanel(current_user=self._user)
+            win.projects_changed.connect(self.project_tree.load_projects)
+            win.finished.connect(self._on_settings_closed)
+            self._settings_win = win
 
-        if settings_panel.exec() == int(QDialog.DialogCode.Accepted):
-            self.root_path = settings_panel.root_path_value.text()
-            self.publish_root_path = settings_panel.publish_root_value.text()
-            if self.root_path:
-                self._watch_path(self.root_path)
+        win.show()
+        win.raise_()
+        win.activateWindow()
 
-        # Clean up session
-        if session:
-            session.close()
+    def _on_settings_closed(self, _result: int = 0) -> None:
+        """Drop the reference so the next click builds a fresh window."""
+        self._settings_win = None
 
     def _on_project_selected(self, name: str, root: str,
                               publish_root: str = "") -> None:
@@ -257,37 +299,57 @@ class MainWindow(QMainWindow):
         self._load_files()
 
     def _load_files(self) -> None:
-        """Load files for the selected sequence/shot/task workdir."""
+        """Load files for the selected sequence/shot/department workdir."""
         if not self.sequence or not self.shot:
             return
 
-        # Workdir is task-based: <root>/<show>/<seq>/<shot>/<department>
-        task = self.task_menu.current_task()
-        if not task:
-            self._show_info("Please select a task (fx/comp/lighting) first")
+        # Workdir is department-based: <root>/<show>/<seq>/<shot>/<department>.
+        # ``self.department`` is kept in sync by _on_department_changed, so the
+        # load path has a single source of truth. Until a department is picked
+        # there is no workdir to show — stay silent, because the shot list is
+        # still browsable; the launch path reports the missing choice.
+        if not self.department:
+            self.file_path = ""
+            self.file_tree.load_for_path("")
             return
 
-        self.task = task
-        self.file_path = os.path.join(
+        department = self.department
+        shot_dir = os.path.join(
             self.root_path,
             self.project,
             self.sequence,
             self.shot,
-            self.task
         )
+        # The department owns the folder; the DCC only opens it. Legacy
+        # DCC-named trees still resolve through resolve_workdir's fallback.
+        self.file_path = resolve_workdir(shot_dir, self.role, department)
 
         self._watch_path(self.file_path)
         self.file_tree.load_for_path(self.file_path)
 
     def _on_role_changed(self, role: str) -> None:
-        """Handle DCC (role) selection change — launch target only."""
-        self.role = role
+        """Handle DCC (role) selection change — the launch target.
 
-    def _on_task_changed(self, task: str) -> None:
-        """Handle task selection change — reload the task workdir files."""
-        self.task = task
+        The DCC is only the runtime choice; the workdir belongs to the
+        department. Legacy app-named trees (``<shot>/nuke``) still depend on the
+        DCC for their fallback folder, so the workdir is re-resolved anyway.
+        """
+        self.role = role
         if self.sequence and self.shot:
             self._load_files()
+
+    def _on_department_changed(self, department: str) -> None:
+        """Handle department selection change — reload the department workdir.
+
+        An empty value means the artist went back to "Select your department":
+        the file panel clears and nothing launches until one is chosen.
+        """
+        self.department = department
+        if self.sequence and self.shot:
+            self._load_files()
+        elif not department:
+            self.file_path = ""
+            self.file_tree.load_for_path("")
 
     def _on_directory_changed(self, path: str) -> None:
         """Handle directory change event.
@@ -334,6 +396,11 @@ class MainWindow(QMainWindow):
             logger.warning("Launch attempted without selecting a role")
             return
 
+        if not self.department:
+            self._show_info('Please select a department first!')
+            logger.warning("Launch attempted without selecting a department")
+            return
+
         dcc = dcc_manager.get_dcc(self.role)
         if not dcc:
             self._show_info(f'DCC "{self.role}" not configured!')
@@ -365,24 +432,48 @@ class MainWindow(QMainWindow):
                 return
         elif self.file_path:
             if not os.path.exists(self.file_path):
-                self._show_info(f'Project path not found: {self.file_path}')
-                logger.warning(f"Project path not found: {self.file_path}")
+                shot_dir = os.path.dirname(self.file_path)
+                try:
+                    available = sorted(
+                        d for d in os.listdir(shot_dir)
+                        if os.path.isdir(os.path.join(shot_dir, d))
+                    )
+                except OSError:
+                    available = []
+                listing = ", ".join(available) if available else "(empty)"
+                self._show_info(
+                    f'Project path not found: {self.file_path}\n\n'
+                    f'{shot_dir} contains: {listing}'
+                )
+                logger.warning(
+                    f"Project path not found: {self.file_path} (available: {available})"
+                )
                 return
 
         # Build environment context
-        # DCC = application (houdini/maya/...), DEPARTMENT = task (fx/comp/...).
-        # Legacy ROLE removed (2026-09-08) — renamed to DCC for clarity.
-        cache_root = (
-            os.path.join(
-                os.path.dirname(os.path.dirname(self.root_path)),
-                "cache", self.project
-            )
+        # Two separate axes (docs/VOCABULARY.md): DCC = application
+        # (houdini/maya/...), DEPARTMENT = the department that owns the work
+        # (fx/comp/...). Legacy ROLE removed (2026-09-08).
+        dev_root = (
+            os.path.dirname(os.path.dirname(self.root_path))
             if self.root_path else ""
+        )
+        cache_root = (
+            os.path.join(dev_root, "cache", self.project) if dev_root else ""
         )
         env_context: dict[str, str] = {
             'DCC': self.role,
-            'DEPARTMENT': self.task,
+            'DEPARTMENT': self.department,
             'CACHE_ROOT': cache_root,
+            # Dev data root: every sibling root derives from it
+            # ($DEV/{projects,publish,cache,assets,renders,tools}).
+            'DEV': dev_root,
+            'ASSET_ROOT': (
+                os.path.join(dev_root, "assets", self.project) if dev_root else ""
+            ),
+            'RENDER_ROOT': (
+                os.path.join(dev_root, "renders", self.project) if dev_root else ""
+            ),
             # Houdini's bundled python has no pyyaml, so publisher.yaml cannot
             # load there — the launcher enables the publisher DB mode via env.
             'PUBLISHER_ENABLE_DATABASE': 'true',
@@ -395,7 +486,7 @@ class MainWindow(QMainWindow):
             'PIPELINE_PROJECT': self.project,
             'PIPELINE_SEQUENCE': self.sequence,
             'PIPELINE_SHOT': self.shot,
-            'PIPELINE_DEPARTMENT': self.task,
+            'PIPELINE_DEPARTMENT': self.department,
             'PIPELINE_USER': os.environ.get('USER', 'artist'),
             'PIPELINE_DCC': self.role,
         }
@@ -415,7 +506,9 @@ class MainWindow(QMainWindow):
         env.update(dcc.prepare_environment(**env_context))
 
         try:
-            subprocess.Popen(command, env=env)
+            # ``cwd`` is how a DCC without a project switch (Nuke) is opened
+            # "in" the shot workdir; every other DCC returns None and inherits.
+            subprocess.Popen(command, env=env, cwd=dcc.launch_cwd(self.file_path))
             logger.info(f"Launched {dcc.name}")
             logger.debug(f"Command: {' '.join(command)}")
         except Exception as e:
