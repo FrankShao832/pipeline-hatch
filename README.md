@@ -50,9 +50,30 @@ pip install -r requirements.txt
 # Run the launcher
 pipeline-hatch
 
-# Or directly
+# Or from a checkout, without installing (both forms work)
+python -m launcher.main
 python launcher/main.py
 ```
+
+### Desktop launch (thin shell)
+
+Double-clickable shells live in `launcher/` and delegate to
+`launcher/launch.py`, which runs **the current working tree** (installed
+`pipeline-hatch` entry point first, `env/bin/python -m launcher.main`
+otherwise). They replace the packaged `Pipeline Hatch.app`: a PyInstaller bundle
+ships an explicit `config/` whitelist, so new config files never reach it until
+it is rebuilt.
+
+```bash
+python3 launcher/launch.py --print-command    # show what would run, no GUI
+
+cp -R "launcher/macos/Pipeline Hatch.app" ~/Applications/           # macOS
+cp "launcher/linux/Pipeline Hatch.desktop" ~/.local/share/applications/   # Linux
+# Windows: launcher/windows/PipelineHatch.bat (edit the LAUNCHER= path)
+```
+
+See `launcher/README.md` for resolution order and the one machine-specific path
+each shell keeps.
 
 ---
 

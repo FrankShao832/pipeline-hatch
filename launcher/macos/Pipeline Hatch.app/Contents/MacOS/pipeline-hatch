@@ -1,0 +1,25 @@
+#!/bin/bash
+# Pipeline Hatch .app shell - delegates to the cross-platform launcher.
+#
+# The ONLY machine-specific value in this bundle is LAUNCHER below. Everything
+# else (env interpreter, entry point, fallback) is resolved by launch.py from
+# its own location, so the repo can live on any volume.
+LAUNCHER="/Volumes/Development/tools/pipeline/pipeline_hatch/launcher/launch.py"
+
+if [ ! -f "$LAUNCHER" ]; then
+    osascript -e 'display dialog "Pipeline Hatch launcher not found.\n\nIs the project volume mounted?\nExpected: /Volumes/Development/tools/pipeline/pipeline_hatch/launcher/launch.py" with title "Pipeline Hatch" buttons {"OK"} default button "OK"'
+    exit 1
+fi
+
+# System python is enough: launch.py is stdlib-only and finds the project env.
+PY=""
+for c in /usr/bin/python3 /usr/local/bin/python3 /opt/homebrew/bin/python3; do
+    if [ -x "$c" ]; then PY="$c"; break; fi
+done
+
+if [ -z "$PY" ]; then
+    osascript -e 'display dialog "Python 3 not found on this system." with title "Pipeline Hatch" buttons {"OK"} default button "OK"'
+    exit 1
+fi
+
+exec "$PY" "$LAUNCHER" "$@"

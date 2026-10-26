@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """Pipeline Launcher - Main entry point."""
 
-import getpass
 import sys
+from pathlib import Path
+
+# Make ``python launcher/main.py`` work as well as ``python -m launcher.main``
+# and the installed ``pipeline-hatch`` console script. Script mode puts
+# ``launcher/`` on sys.path instead of the repo root, so ``import launcher.*``
+# would otherwise fail with ModuleNotFoundError. (plan U1.5 ②)
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import getpass
 from types import SimpleNamespace
 from typing import Optional
 
@@ -77,7 +87,10 @@ def main():
 
     try:
         app = QApplication(sys.argv)
-        app.setApplicationName("Y Pipeline")
+        # "Y Pipeline" is the series; "Pipeline Hatch" is this tool.
+        app.setApplicationName("Pipeline Hatch")
+        app.setApplicationDisplayName("Pipeline Hatch")
+        app.setOrganizationName("Y Pipeline")
 
         # Set application window icon from bundled .icns
         icon_path = Path(__file__).parent / "ui" / "imgs" / "pipeline_hatch.icns"
