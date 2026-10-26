@@ -20,7 +20,7 @@ demo numbers for their real pipeline.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from launcher.ui.fakes import FakeSettingsDataSource
 from launcher.ui.widgets.projects_page import ProjectsPage
+from launcher.ui.widgets.resolved_preview import ResolvedPreview
 from launcher.ui.viewmodels import SettingsDataSource
 
 NAV_WIDTH = 200
@@ -110,17 +111,10 @@ class SettingsWindow(QDialog):
         self.stack.addWidget(_placeholder("Environment", "Scope tree lands in T14."))
         self.stack.addWidget(_placeholder("Preflight", "Diagnostics land in T15."))
 
-        self.preview_host = QWidget()
-        preview_layout = QVBoxLayout(self.preview_host)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_title = QLabel("Resolved Environment")
-        preview_title.setStyleSheet("font-weight: bold;")
-        preview_hint = QLabel("Live resolver preview lands in T13.")
-        preview_hint.setWordWrap(True)
-        preview_hint.setStyleSheet("color: #8b94a3;")
-        preview_layout.addWidget(preview_title)
-        preview_layout.addWidget(preview_hint)
-        preview_layout.addStretch(1)
+        # The resolved environment is the point of this window: pick a show,
+        # a DCC and a department and see the exact mapping a launch injects.
+        self.resolved_preview = ResolvedPreview(self._data_source)
+        self.preview_host = self.resolved_preview
 
         # Column order (left -> right): resolved preview | pages | nav.
         # Nav on the right edge keeps switching near the pointer; the page
@@ -159,7 +153,8 @@ class SettingsWindow(QDialog):
         self.fixture_label.setVisible(self.is_fixture)
 
         self.copy_env_btn = QPushButton("Copy .env")
-        self.copy_env_btn.setEnabled(False)          # enabled in T13
+        self.copy_env_btn.setToolTip("Copy the resolved rows as NAME=value lines")
+        self.copy_env_btn.clicked.connect(self._on_copy_env)
         self.open_config_btn = QPushButton("Open config")
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.close)
@@ -184,6 +179,14 @@ class SettingsWindow(QDialog):
         self.warnings_label.setText(
             "0 warnings" if count == 0 else f"{count} warning" + ("s" if count != 1 else "")
         )
+
+    def _on_copy_env(self) -> None:
+        """Copy the resolved environment to the clipboard as NAME=value lines."""
+        text = self.resolved_preview.env_text()
+        if not text:
+            return
+        QGuiApplication.clipboard().setText(text)
+        self.set_saved_now("env copied")
 
     def set_saved_now(self, text: str = "just now") -> None:
         """Update the footer saved stamp after a successful write."""

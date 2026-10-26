@@ -113,7 +113,8 @@ class TestShell:
     def test_footer_initial_state(self, window):
         assert window.saved_label.text() == "Saved —"
         assert window.warnings_label.text() == "0 warnings"
-        assert window.copy_env_btn.isEnabled() is False
+        # T13: Copy .env is live — it copies the resolved rows.
+        assert window.copy_env_btn.isEnabled() is True
         assert window.fixture_label.isHidden() is False   # visible once shown
         assert window.close_btn.text() == "Close"
         assert window.nav.currentRow() == 0

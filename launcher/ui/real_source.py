@@ -408,6 +408,19 @@ class RealSettingsDataSource:
             target=name,
         )]
 
+    def dcc_roles(self) -> tuple[str, ...]:
+        """Configured DCC keys (``dcc.yaml: dcc``)."""
+        return self._dcc_roles()
+
+    def departments(self) -> tuple[str, ...]:
+        """Canonical department vocabulary (``dcc.yaml: pipeline.departments``)."""
+        try:
+            pipeline = (self.config.get_dcc_config() or {}).get("pipeline", {}) or {}
+            depts = tuple(pipeline.get("departments") or ())
+        except Exception:
+            depts = ()
+        return depts or ("fx", "comp", "lighting")
+
     def resolved(self, show: str, dcc: str,
                  department: str) -> list[ResolvedRow]:
         """The exact environment a launch would produce, resolved for real."""

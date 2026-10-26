@@ -192,6 +192,14 @@ class FakeSettingsDataSource:
         ]
         return []
 
+    def dcc_roles(self) -> tuple[str, ...]:
+        """Fixture DCC roles (same three the app ships)."""
+        return ("maya", "houdini", "nuke")
+
+    def departments(self) -> tuple[str, ...]:
+        """Fixture departments (the reduced three from the old config)."""
+        return ("fx", "comp", "lighting")
+
     def resolved(self, show: str, dcc: str,
                  department: str) -> list[ResolvedRow]:
         """26 rows: the 19 injected keys plus OCIO-family extras."""

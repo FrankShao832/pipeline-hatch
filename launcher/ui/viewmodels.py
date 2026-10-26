@@ -156,5 +156,14 @@ class SettingsDataSource(Protocol):
                  department: str) -> list[ResolvedRow]:
         ...
 
+    # -- Selection vocabularies -------------------------------------------
+    # The preview needs the candidates for its pickers, and the UI is not
+    # allowed to read dcc.yaml / the department vocabulary itself.
+    def dcc_roles(self) -> tuple[str, ...]:
+        ...
+
+    def departments(self) -> tuple[str, ...]:
+        ...
+
     def diagnostics(self) -> list[DiagnosticRow]:
         ...
