@@ -189,6 +189,15 @@ class BaseDCC(ABC):
         """
         pass
 
+    def launch_cwd(self, project_path: Optional[str] = None) -> Optional[str]:
+        """Working directory to spawn the DCC in (``None`` = inherit ours).
+
+        Most DCCs accept a project/workspace argument, so the launcher leaves
+        the cwd alone. Nuke has no such switch and is opened "in" a shot folder
+        by spawning it there — see :meth:`NukeDCC.launch_cwd`.
+        """
+        return None
+
     @abstractmethod
     def prepare_environment(self, **kwargs) -> dict[str, str]:
         """Prepare environment variables for DCC launch.

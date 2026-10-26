@@ -174,7 +174,8 @@ class TestNukeDCC:
             "flags": {
                 "nukex": "--nukex",
                 "file": "",
-                "project": "-m"
+                # No project-directory flag in Nuke (2026-10-25 crash fix).
+                "project": ""
             }
         }
 
@@ -187,15 +188,47 @@ class TestNukeDCC:
         assert nuke.app_name == "Nuke16.0v3.app"
 
     def test_build_command_nukex_mode(self, nuke_config):
-        """Test building Nuke command with NukeX."""
+        """NukeX mode, no script: the workdir must NOT become an argument.
+
+        Regression pin for the 2026-10-25 crash: ``-m`` is Nuke's render
+        thread count, so passing a directory made Nuke 17 segfault at startup.
+        """
         nuke = NukeDCC(nuke_config)
         cmd = nuke.build_command(project_path="/test/project")
 
         # Direct executable path (not open -a) to preserve env vars
         assert nuke.executable in cmd
         assert "--nukex" in cmd
-        assert "-m" in cmd
-        assert "/test/project" in cmd
+        assert "-m" not in cmd
+        assert "/test/project" not in cmd
+        assert cmd == [nuke.executable, "--nukex"]
+
+    def test_project_flag_is_honoured_when_configured(self, nuke_config):
+        """A DCC-style project flag still works if someone configures one."""
+        nuke_config["flags"]["project"] = "-project"
+        nuke = NukeDCC(nuke_config)
+        cmd = nuke.build_command(project_path="/test/project")
+        assert cmd[-2:] == ["-project", "/test/project"]
+
+    def test_empty_project_flag_does_not_leave_a_dangling_arg(self, nuke_config):
+        """An empty flag must be dropped, not passed as an empty string."""
+        nuke = NukeDCC(nuke_config)
+        cmd = nuke.build_command(project_path="/test/project")
+        assert "" not in cmd
+
+    def test_launch_cwd_only_for_existing_directories(self, nuke_config, tmp_path):
+        nuke = NukeDCC(nuke_config)
+        workdir = tmp_path / "comp"
+        workdir.mkdir()
+
+        assert nuke.launch_cwd(str(workdir)) == str(workdir)
+        assert nuke.launch_cwd(str(tmp_path / "gone")) is None
+        assert nuke.launch_cwd(None) is None
+
+    def test_other_dccs_do_not_override_cwd(self):
+        """Only Nuke needs the cwd trick; the rest keep the inherited cwd."""
+        from launcher.dcc.base_dcc import BaseDCC
+        assert BaseDCC.launch_cwd(None, "/some/path") is None
 
     def test_build_command_with_file(self, nuke_config):
         """Test building command with file path."""

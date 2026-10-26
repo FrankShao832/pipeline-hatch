@@ -305,3 +305,23 @@ class TestLocalOverride:
         assert "maya" in cfg["dcc"]
         assert "houdini" in cfg["dcc"]
         assert "nuke" in cfg["dcc"]
+
+
+class TestShippedDccFlags:
+    """Guard the shared dcc.yaml against command lines that crash a DCC.
+
+    Nuke's ``-m`` switch sets the render thread count (``-m n``), not a project
+    directory. Configuring it as the "project" flag made Nuke 17 segfault at
+    startup on 2026-10-25 — the launcher passed the shot workdir as the thread
+    count.
+    """
+
+    def test_nuke_has_no_project_directory_flag(self):
+        path = Path(__file__).resolve().parents[1] / "config" / "dcc.yaml"
+        text = path.read_text(encoding="utf-8")
+
+        assert 'project: "-m"' not in text
+        assert "project: '-m'" not in text
+        # The working directory is delivered through the process cwd instead.
+        nuke_block = text.split("  nuke:", 1)[1].split("  katana:", 1)[0]
+        assert 'project: ""' in nuke_block
