@@ -22,6 +22,8 @@ from launcher.ui.widgets import (
     FileTreeWidget,
 )
 from launcher.core.dcc_manager import dcc_manager
+from launcher.core.launch_env import build_env_context
+from launcher.ui.real_source import RealSettingsDataSource
 from launcher.ui.settings_window import SettingsPanel
 from launcher.utils.logger import logger
 
@@ -246,7 +248,10 @@ class MainWindow(QMainWindow):
         """
         win = self._settings_win
         if win is None:
-            win = SettingsPanel(current_user=self._user)
+            # Real backend: the existing projects, read from the launcher
+            # database (YAML fallback) plus their on-disk state.
+            win = SettingsPanel(data_source=RealSettingsDataSource(),
+                                current_user=self._user)
             win.projects_changed.connect(self.project_tree.load_projects)
             win.finished.connect(self._on_settings_closed)
             self._settings_win = win
@@ -450,46 +455,19 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-        # Build environment context
-        # Two separate axes (docs/VOCABULARY.md): DCC = application
-        # (houdini/maya/...), DEPARTMENT = the department that owns the work
-        # (fx/comp/...). Legacy ROLE removed (2026-09-08).
-        dev_root = (
-            os.path.dirname(os.path.dirname(self.root_path))
-            if self.root_path else ""
+        # Build environment context from the single implementation
+        # (launcher.core.launch_env): the settings preview reads the same
+        # function, so it cannot drift from what a launch really injects.
+        # Two axes: DCC = application, DEPARTMENT = owner of the work.
+        env_context = build_env_context(
+            root_path=self.root_path,
+            publish_root_path=self.publish_root_path,
+            project=self.project,
+            sequence=self.sequence,
+            shot=self.shot,
+            department=self.department,
+            dcc=self.role,
         )
-        cache_root = (
-            os.path.join(dev_root, "cache", self.project) if dev_root else ""
-        )
-        env_context: dict[str, str] = {
-            'DCC': self.role,
-            'DEPARTMENT': self.department,
-            'CACHE_ROOT': cache_root,
-            # Dev data root: every sibling root derives from it
-            # ($DEV/{projects,publish,cache,assets,renders,tools}).
-            'DEV': dev_root,
-            'ASSET_ROOT': (
-                os.path.join(dev_root, "assets", self.project) if dev_root else ""
-            ),
-            'RENDER_ROOT': (
-                os.path.join(dev_root, "renders", self.project) if dev_root else ""
-            ),
-            # Houdini's bundled python has no pyyaml, so publisher.yaml cannot
-            # load there — the launcher enables the publisher DB mode via env.
-            'PUBLISHER_ENABLE_DATABASE': 'true',
-            'PROJECT_ROOT': self.root_path,
-            'PUBLISH_ROOT': self.publish_root_path,
-            'SHOW': self.project,
-            'SEQ': self.sequence,
-            'SHOT': self.shot,
-            # New PIPELINE_* naming (primary source for publisher)
-            'PIPELINE_PROJECT': self.project,
-            'PIPELINE_SEQUENCE': self.sequence,
-            'PIPELINE_SHOT': self.shot,
-            'PIPELINE_DEPARTMENT': self.department,
-            'PIPELINE_USER': os.environ.get('USER', 'artist'),
-            'PIPELINE_DCC': self.role,
-        }
 
         if self.role == 'houdini' and self.file_path:
             env_context['JOB'] = self.file_path

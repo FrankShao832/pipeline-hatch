@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from launcher.ui.fakes import FakeSettingsDataSource
+from launcher.ui.widgets.projects_page import ProjectsPage
 from launcher.ui.viewmodels import SettingsDataSource
 
 NAV_WIDTH = 200
@@ -104,7 +105,8 @@ class SettingsWindow(QDialog):
         self.env_badge.hide()
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(_placeholder("Projects", "Project table lands in T07."))
+        self.projects_page = ProjectsPage(self._data_source)
+        self.stack.addWidget(self.projects_page)
         self.stack.addWidget(_placeholder("Environment", "Scope tree lands in T14."))
         self.stack.addWidget(_placeholder("Preflight", "Diagnostics land in T15."))
 
