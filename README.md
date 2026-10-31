@@ -2,8 +2,8 @@
 
 A configuration-driven DCC (Digital Content Creation) application launcher for VFX/animation pipelines. Built with PySide6.
 
-> **Current Version:** 2.2.0  
-> **Status:** Development preview — settings panel landed, 338 tests
+> **Current Version:** 2.3.0  
+> **Status:** Development preview — launcher honours config/env.yaml, 338 tests
 
 ---
 
