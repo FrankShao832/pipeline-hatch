@@ -83,3 +83,8 @@ pipeline:
     - DEV
     - ASSET_ROOT
     - RENDER_ROOT
+    # Colour management and frame rate (2026-10-30): every DCC must open with
+    # the show's look and timing, so these are whitelisted pipeline keys — an
+    # override that the DCC silently dropped would make the settings panel lie.
+    - OCIO
+    - FPS

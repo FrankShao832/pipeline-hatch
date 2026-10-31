@@ -22,7 +22,7 @@ from launcher.ui.widgets import (
     FileTreeWidget,
 )
 from launcher.core.dcc_manager import dcc_manager
-from launcher.core.launch_env import build_env_context
+from launcher.core.launch_env import build_env_context, merge_env_store
 from launcher.ui.real_source import RealSettingsDataSource
 from launcher.ui.settings_window import SettingsPanel
 from launcher.ui.viewmodels import SettingsContext
@@ -111,6 +111,10 @@ class MainWindow(QMainWindow):
         self._user = user
         # Modeless settings window: one instance, created on first use (T06).
         self._settings_win: Optional[SettingsPanel] = None
+        # Override store a launch layers on top of the derived values.
+        # ``None`` means <config dir>/env.yaml; tests point it at a temp file
+        # so a developer's own overrides cannot change the assertions.
+        self._env_store_path: Optional[str] = None
         self._setup_ui()
         self.project_tree.load_projects()
 
@@ -485,6 +489,11 @@ class MainWindow(QMainWindow):
             department=self.department,
             dcc=self.role,
         )
+
+        # Layer the show's overrides on top of the derived values. Without this
+        # the settings panel would be writing a file nobody reads: the values it
+        # edits have to be the values a DCC receives, or the preview is a lie.
+        env_context = merge_env_store(env_context, self._env_store_path)
 
         if self.role == 'houdini' and self.file_path:
             env_context['JOB'] = self.file_path

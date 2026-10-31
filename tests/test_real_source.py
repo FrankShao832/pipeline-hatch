@@ -157,10 +157,10 @@ class TestEnvironment:
                                            scope="show", scope_key="CyberPunk"))
 
         codes = [d.code for d in diags]
-        assert "W_GUARDED" in codes
-        # OCIO is not in dcc.yaml: pipeline.env_vars either, so the same write
-        # also says the value will never reach a DCC. Both statements are true.
-        assert "W_WHITELIST" in codes
+        # OCIO is whitelisted since 2026-10-30 (a DCC that silently dropped the
+        # show's colour config would make this panel a lie), so the only caveat
+        # left is the one that matters: it must not fork between departments.
+        assert codes == ["W_GUARDED"]
         assert "OCIO" in EnvConfig.load(source.env_store_path).scopes["show"]["CyberPunk"]
 
     def test_a_broken_store_is_never_overwritten(self, source):
@@ -252,7 +252,7 @@ class TestEnvOverrides:
         assert ocio.scope_key == show
         assert ocio.value == "/color/aces_cg.ocio"
         assert ocio.description == "ACES for this show"
-        assert ocio.injected_to == ()          # OCIO is not in the dcc.yaml whitelist
+        assert ocio.injected_to              # whitelisted: a DCC really receives it
 
     def test_a_broken_store_is_reported_not_swallowed(self, source, tmp_path):
         path = tmp_path / "env.yaml"
