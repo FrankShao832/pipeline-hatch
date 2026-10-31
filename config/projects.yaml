@@ -33,25 +33,12 @@ projects:
     publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
-  - name: "Test"
-    root: "${DEV}/projects/y_pipeline_projects"
-    publish_root: "${DEV}/projects/y_pipeline_publish"
-    enabled: true
-
-  - name: "test_01"
-    root: "${DEV}/projects/y_pipeline_projects"
-    publish_root: "${DEV}/projects/y_pipeline_publish"
-    enabled: true
-
-  - name: "test_02"
-    root: "${DEV}/projects/y_pipeline_projects"
-    publish_root: "${DEV}/projects/y_pipeline_publish"
-    enabled: true
-
-  - name: "test_project"
-    root: "${DEV}/projects/y_pipeline_projects"
-    publish_root: "${DEV}/projects/y_pipeline_publish"
-    enabled: true
+  # Scaffold test beds (Test / test_01 / test_02 / test_project) were removed
+  # from the registry on 2026-10-31: they were half-built places to try the
+  # launcher, and every one of them either had no publish folder or no real
+  # work in it, so they only produced W_PATH/W_PUBLISH noise in Preflight.
+  # Their disk trees were left alone; re-add a section here if a test bed is
+  # needed again.
 
 
 # Default paths (used when no project is selected)
