@@ -18,6 +18,18 @@ SCOPE_ORDER: tuple[str, ...] = ("derived", "global", "show", "dcc", "department"
 SCAFFOLD_STATES: tuple[str, ...] = ("complete", "missing", "n/a")
 LEVELS: tuple[str, ...] = ("error", "warn", "info")
 
+#: Keys that an override may *technically* win but must not diverge silently.
+#:
+#: These are the "must not fork" class: colour management, USD and timing decide
+#: whether two departments' output can be compared at all, so a show- or
+#: department-scope entry on one of them is an event worth showing on screen,
+#: not a row buried in a table. Purely a display concern — nothing here changes
+#: how the resolver works.
+GUARDED_SCOPE_KEYS: frozenset[str] = frozenset({
+    "OCIO", "ACES_CONFIG", "OCIO_CONFIG", "OCIO_PATH",
+    "USD_VERSION", "PXR_VERSION", "FPS", "COLORSPACE",
+})
+
 
 def scope_rank(scope: str) -> int:
     """Return the precedence rank of a scope name (lower wins)."""
@@ -25,6 +37,42 @@ def scope_rank(scope: str) -> int:
         return SCOPE_ORDER.index(scope)
     except ValueError:
         return len(SCOPE_ORDER)
+
+
+@dataclass(frozen=True)
+class SettingsContext:
+    """What the settings window is looking at: one launch context.
+
+    Snapshotted once from the main window when the settings window opens — the
+    main window stays the owner of the real launch context; this is a copy for
+    editing and checking.
+
+    ``seq`` / ``shot`` are display-only for now: the override chain does not
+    have seq/shot layers yet, so they only tell the user which shot the numbers
+    refer to.
+    """
+
+    project: str = ""
+    seq: str = ""
+    shot: str = ""
+    dcc: str = ""
+    department: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        """True when nothing was supplied (no project, DCC or department)."""
+        return not (self.project or self.dcc or self.department)
+
+    def summary(self) -> str:
+        """``project · department · dcc`` — the one-line provenance string."""
+        return " · ".join(part for part in (self.project, self.department, self.dcc) if part)
+
+    def breadcrumb(self) -> str:
+        """``project ▸ seq/shot`` — what a launch would open."""
+        text = self.project or "(no project)"
+        if self.seq or self.shot:
+            text += f" ▸ {self.seq or '?'}/{self.shot or '?'}"
+        return text
 
 
 @dataclass(frozen=True)
@@ -77,6 +125,10 @@ class ApplySummary:
     skipped: tuple[str, ...] = ()
     errors: tuple[tuple[str, str], ...] = ()        # (path, reason)
     diagnostics: tuple[DiagnosticRow, ...] = ()
+    #: Show-scope overrides the creation seeds (``env.yaml``). On a dry run this
+    #: is what *would* be written — the plan preview and the real run therefore
+    #: quote the same number.
+    env_written: int = 0
 
     @property
     def ok(self) -> bool:
@@ -112,6 +164,7 @@ class ResolvedRow:
     name: str
     value: str
     source: str                     # SCOPE_ORDER member that won
+    scope_key: str = ""             # show name / dcc role / department ("" for derived)
     shadowed: tuple[tuple[str, str], ...] = ()      # ((scope, value), ...) low→high
 
     @property
@@ -150,6 +203,15 @@ class SettingsDataSource(Protocol):
 
     def delete_env_row(self, name: str, scope: str,
                        scope_key: str) -> list[DiagnosticRow]:
+        ...
+
+    # -- Undo ---------------------------------------------------------------
+    # Every write keeps the previous bytes as a backup, so the last write can
+    # always be taken back without asking the user to remember the old value.
+    def has_env_backup(self) -> bool:
+        ...
+
+    def revert_env(self) -> list[DiagnosticRow]:
         ...
 
     def resolved(self, show: str, dcc: str,

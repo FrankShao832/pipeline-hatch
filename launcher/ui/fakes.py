@@ -57,6 +57,14 @@ _ENV_FIXTURES: tuple[tuple[str, str, str, str, bool, bool, str, tuple[str, ...]]
 )
 
 
+#: Same two decisions the real show skeleton seeds (``env_store.SHOW_SKELETON``).
+#: Duplicated as data on purpose: the UI layer must not import ``launcher.core``.
+_SHOW_SKELETON_FIXTURE: tuple[tuple[str, str, str], ...] = (
+    ("OCIO", "${DEV}/color/aces_cg.ocio", "ACES CG colour configuration for this show"),
+    ("FPS", "24", "Frame rate the show is authored at"),
+)
+
+
 def _project_fixtures() -> tuple[ProjectRow, ...]:
     return (
         ProjectRow(
@@ -94,6 +102,7 @@ class FakeSettingsDataSource:
         self.mode = mode
         self._repaired: set[str] = set()
         self._created: list[ProjectRow] = []
+        self._env_backups: list[list[EnvRow]] = []
         self._env: list[EnvRow] = [] if mode == "empty" else [
             EnvRow(name=n, value=v, scope=s, scope_key=k, enabled=e,
                    secret=sec, description=d, injected_to=inj)
@@ -109,23 +118,62 @@ class FakeSettingsDataSource:
             return list(self._created)
         return list(_project_fixtures()) + list(self._created)
 
+    def _fixture_row(self, name: str) -> ProjectRow | None:
+        """The fixture row for *name*, without going through ``projects()``.
+
+        ``projects()`` raises in ``errors`` mode on purpose; the plan still has
+        to describe *something* so the planner-facing calls stay total.
+        """
+        for row in list(_project_fixtures()) + list(self._created):
+            if row.name == name:
+                return row
+        return None
+
     def scaffold_plan(self, name: str) -> list[ScaffoldPlanRow]:
-        root = "/Volumes/Development/projects/y_pipeline_projects"
-        publish = "/Volumes/Development/projects/y_pipeline_publish"
+        """Skeleton plan whose ``exists`` flags agree with the project's state.
+
+        Consistency matters here: the panel renders ✓/✗ straight from these
+        flags, so a "complete" project whose plan claims every folder is missing
+        would show a red verdict for a healthy show (and vice versa after a
+        repair). A repaired project therefore flips to all-exists.
+        """
+        dev = "/Volumes/Development"
+        root = f"{dev}/projects/y_pipeline_projects"
+        publish = f"{dev}/projects/y_pipeline_publish"
+        row = self._fixture_row(name)
+        state = row.scaffold_state if row is not None else "n/a"
+        repaired = name in self._repaired
+        exists = repaired or state == "complete"
+
         rows = [
-            ScaffoldPlanRow(path=f"{root}/{name}", group="required", required=True),
-            ScaffoldPlanRow(path=f"{publish}/{name}", group="required", required=True),
+            ScaffoldPlanRow(path=f"{root}/{name}", group="required", required=True,
+                            exists=exists),
+            ScaffoldPlanRow(path=f"{publish}/{name}", group="required", required=True,
+                            exists=exists),
         ]
+        if row is None:
+            # A project that does not exist yet has no sequences to list. The
+            # real backend plans exactly this shape (2 roots + 3 dev folders),
+            # and the New Project preview quotes the count — a fixture that
+            # invented extra folders would make the demo promise more than the
+            # pipeline creates.
+            for sub in ("cache", "assets", "renders"):
+                rows.append(ScaffoldPlanRow(
+                    path=f"{dev}/{sub}/{name}", group="dev_root", required=False,
+                    exists=False))
+            return rows
         for seq in ("seq001", "seq002"):
             rows.append(ScaffoldPlanRow(
-                path=f"{root}/{name}/{seq}", group="sequences", required=False))
+                path=f"{root}/{name}/{seq}", group="sequences", required=False,
+                exists=exists))
             for shot in ("sh010", "sh020"):
                 rows.append(ScaffoldPlanRow(
                     path=f"{root}/{name}/{seq}/{shot}", group="sequences",
-                    required=False))
+                    required=False, exists=exists))
         for sub in ("cache", "assets", "renders"):
             rows.append(ScaffoldPlanRow(
-                path=f"{root}/../{sub}/{name}", group="dev_root", required=False))
+                path=f"{dev}/{sub}/{name}", group="dev_root", required=False,
+                exists=exists))
         return rows
 
     def repair(self, name: str, dry_run: bool) -> ApplySummary:
@@ -159,16 +207,24 @@ class FakeSettingsDataSource:
                        options: dict[str, Any], dry_run: bool) -> ApplySummary:
         plan = self.scaffold_plan(name)
         created = tuple(r.path for r in plan if not r.exists)
+        # Mirrors the real backend's show skeleton (card C8): the count is a
+        # fixture, but it is the same number the real store would write, or the
+        # demo's summary would disagree with the pipeline's.
+        env_written = len(_SHOW_SKELETON_FIXTURE)
         if dry_run:
-            return ApplySummary(created=created)
+            return ApplySummary(created=created, env_written=env_written)
         self._repaired.add(name)
+        self._env_backups.append(list(self._env))
+        self._env.extend(
+            EnvRow(name=n, value=v, scope="show", scope_key=name, description=d)
+            for n, v, d in _SHOW_SKELETON_FIXTURE)
         self._created.append(ProjectRow(
             name=name, root=root, publish_root=publish_root,
             seqs=len(options.get("seqs", []) or []),
             shots=int(options.get("shots_per_seq", 0) or 0),
-            env_show_count=0, scaffold_state="complete", scaffold_missing=0,
+            env_show_count=env_written, scaffold_state="complete", scaffold_missing=0,
         ))
-        return ApplySummary(created=created)
+        return ApplySummary(created=created, env_written=env_written)
 
     # -- Environment ------------------------------------------------------
 
@@ -177,11 +233,27 @@ class FakeSettingsDataSource:
 
     def save_env_row(self, row: EnvRow) -> list[DiagnosticRow]:
         key = (row.name, row.scope, row.scope_key)
+        # Snapshot before mutating: one backup per write, like the real store.
+        self._env_backups.append(list(self._env))
         for idx, existing in enumerate(self._env):
             if (existing.name, existing.scope, existing.scope_key) == key:
                 self._env[idx] = row
                 return []
         self._env.append(row)
+        return []
+
+    def has_env_backup(self) -> bool:
+        """Fixture mirror of the real store's ``.bak`` presence."""
+        return bool(self._env_backups)
+
+    def revert_env(self) -> list[DiagnosticRow]:
+        """Restore the rows captured before the last save (idempotent)."""
+        if not self._env_backups:
+            return [DiagnosticRow(
+                "warn", "W_NO_BACKUP", "Nothing to revert to",
+                "The first edit creates a backup next to env.yaml.",
+                target="env.yaml")]
+        self._env = list(self._env_backups[-1])
         return []
 
     def delete_env_row(self, name: str, scope: str,
@@ -208,7 +280,9 @@ class FakeSettingsDataSource:
         dev = "/Volumes/Development"
         root = f"{dev}/projects/y_pipeline_projects"
         publish = f"{dev}/projects/y_pipeline_publish"
-        dept = department or "fx"
+        # Never invent a department: an unset context must show an empty
+        # DEPARTMENT, otherwise the preview claims a value nobody chose.
+        dept = department or ""
         base: tuple[tuple[str, str, str], ...] = (
             ("DCC", dcc or "houdini", "derived"),
             ("DEPARTMENT", dept, "derived"),

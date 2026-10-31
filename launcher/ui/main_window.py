@@ -25,6 +25,7 @@ from launcher.core.dcc_manager import dcc_manager
 from launcher.core.launch_env import build_env_context
 from launcher.ui.real_source import RealSettingsDataSource
 from launcher.ui.settings_window import SettingsPanel
+from launcher.ui.viewmodels import SettingsContext
 from launcher.utils.logger import logger
 
 
@@ -251,7 +252,8 @@ class MainWindow(QMainWindow):
             # Real backend: the existing projects, read from the launcher
             # database (YAML fallback) plus their on-disk state.
             win = SettingsPanel(data_source=RealSettingsDataSource(),
-                                current_user=self._user)
+                                current_user=self._user,
+                                context=self._current_context())
             win.projects_changed.connect(self.project_tree.load_projects)
             win.finished.connect(self._on_settings_closed)
             self._settings_win = win
@@ -259,6 +261,21 @@ class MainWindow(QMainWindow):
         win.show()
         win.raise_()
         win.activateWindow()
+
+    def _current_context(self) -> SettingsContext:
+        """Snapshot of what the next launch would use.
+
+        The settings window copies this once when it opens; it never reads the
+        main window live, so clicking around the tree cannot swap the numbers
+        under an open window.
+        """
+        return SettingsContext(
+            project=self.project,
+            seq=self.sequence,
+            shot=self.shot,
+            dcc=self.role_menu.current_role() or "",
+            department=self.department or "",
+        )
 
     def _on_settings_closed(self, _result: int = 0) -> None:
         """Drop the reference so the next click builds a fresh window."""

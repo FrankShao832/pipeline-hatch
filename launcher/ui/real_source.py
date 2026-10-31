@@ -5,12 +5,16 @@ from the launcher database (falling back to ``config/projects.yaml`` when the
 database is unreachable), the sequence/shot counts and the scaffold state come
 from the real project trees on disk, and the environment rows come from
 :mod:`launcher.core.launch_env` — the same function the launcher uses to build a
-launch environment, so the preview cannot drift from reality.
+launch environment, so the preview cannot drift from reality — layered with the
+stored overrides from ``config/env.yaml`` (:mod:`launcher.core.env_resolver`).
 
 Not implemented yet, and reported as a diagnostic instead of pretending:
 
-* ``save_env_row`` / ``delete_env_row`` — there is no ``env.yaml`` store yet
-  (plan U7), so the Environment page is read-only.
+* ``delete_env_row`` — removing an override lands with the Environment page
+  (plan U7).
+
+Writes to the override store go through :mod:`launcher.core.env_store`, which
+keeps the previous bytes as ``env.yaml.bak.<timestamp>`` on every save.
 
 Writes go through the repository and commit explicitly: ``DatabaseManager``
 hands out a raw ``Session``, so a ``with`` block closes it without committing
@@ -21,12 +25,16 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from launcher.core.env_resolver import resolve
+from launcher.core.env_store import EnvConfig, EnvStoreError
 from launcher.core.launch_env import DEV_SUBDIRS, build_env_context, compute_dev_root
 from launcher.ui.viewmodels import (
+    GUARDED_SCOPE_KEYS,
     ApplySummary,
     DiagnosticRow,
     EnvRow,
@@ -42,6 +50,9 @@ NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 #: derives it from its own config), see plan D-H.
 WHITELIST_EXCEPTIONS: tuple[str, ...] = ("JOB",)
 
+#: Suffix of the one-backup-per-save copies ``EnvConfig.save`` leaves behind.
+BACKUP_SUFFIX = ".bak."
+
 
 def _list_dirs(path: str) -> list[str]:
     """Return the sorted subdirectory names of *path* (``[]`` when missing)."""
@@ -54,15 +65,20 @@ def _list_dirs(path: str) -> list[str]:
 class RealSettingsDataSource:
     """``SettingsDataSource`` backed by the launcher database and the disk."""
 
-    def __init__(self, db: Any = None, config: Any = None) -> None:
+    def __init__(self, db: Any = None, config: Any = None,
+                 env_store_path: str | Path | None = None) -> None:
         """Store the collaborators lazily.
 
         Args:
             db: ``DatabaseManager`` instance; resolved on first use when omitted.
             config: ``ConfigManager`` instance; resolved on first use when omitted.
+            env_store_path: ``env.yaml`` to read overrides from. Defaults to
+                ``<config dir>/env.yaml``; tests point it at a temp file so a
+                developer's local overrides cannot change the assertions.
         """
         self._db = db
         self._config = config
+        self._env_store_path = env_store_path
 
     # -- Collaborators -----------------------------------------------------
 
@@ -83,6 +99,65 @@ class RealSettingsDataSource:
         return self._config
 
     # -- Config helpers ----------------------------------------------------
+
+    @property
+    def env_store_path(self) -> Path:
+        """The override store this backend reads (and later writes)."""
+        if self._env_store_path is not None:
+            return Path(self._env_store_path)
+        return Path(self.config.config_dir) / "env.yaml"
+
+    def _load_store(self) -> tuple[EnvConfig | None, DiagnosticRow | None]:
+        """Read the override store.
+
+        Returns:
+            ``(store, None)`` on success — ``(None, diagnostic)`` when the file
+            exists but cannot be trusted. A broken store must never look like an
+            empty one: the preview would then claim a show's paths are derived
+            while its overrides sit unread on disk.
+        """
+        try:
+            return EnvConfig.load(self.env_store_path), None
+        except EnvStoreError as exc:
+            return None, DiagnosticRow(
+                "error", "E_ENV_STORE",
+                f"Environment overrides cannot be read: {exc}",
+                "Fix config/env.yaml — overrides are ignored until it parses.",
+                target="env.yaml",
+            )
+
+    def _show_env_counts(self) -> dict[str, int]:
+        """How many overrides each show owns (``scopes.show.<show>``).
+
+        Counted from the store rather than guessed, so the project column's
+        "N show-scoped var(s)" matches what the resolved preview actually got
+        from that layer. An unreadable store counts as zero here — the error
+        itself is reported by :meth:`diagnostics` instead of being multiplied
+        across every row.
+        """
+        store, _error = self._load_store()
+        if store is None:
+            return {}
+        return {key: len(entries)
+                for key, entries in (store.scopes.get("show") or {}).items()}
+
+    def _expand_stored(self, entries, ctx: dict[str, str]) -> dict[str, str]:
+        """Expand ``$VAR`` in store-sourced values, keyed by name.
+
+        Derived values are already absolute (``build_env_context`` builds them
+        from the context), so only the stored ones need expanding — and they do,
+        because a shared ``env.yaml`` writes ``${DEV}/assets/${SHOW}`` rather than
+        one machine's path.
+        """
+        out: dict[str, str] = {}
+        for entry in entries:
+            if entry.source == "derived":
+                continue
+            try:
+                out[entry.name] = self.config.expand_value(entry.value, extra=ctx)
+            except Exception:
+                out[entry.name] = entry.value
+        return out
 
     def _dcc_roles(self) -> tuple[str, ...]:
         """Return the configured DCC keys (``maya`` / ``houdini`` / ...)."""
@@ -167,6 +242,7 @@ class RealSettingsDataSource:
     def projects(self) -> list[ProjectRow]:
         """Every configured project with disk stats and scaffold state."""
         out: list[ProjectRow] = []
+        env_counts = self._show_env_counts()
         for row in self._merged_rows():
             project_dir = os.path.join(row.root, row.name)
             seqs, shots = self._count_tree(project_dir)
@@ -177,7 +253,7 @@ class RealSettingsDataSource:
                     row,
                     seqs=seqs,
                     shots=shots,
-                    env_show_count=0,      # no show-scoped env store yet (U7)
+                    env_show_count=env_counts.get(row.name, 0),
                     scaffold_state="complete" if not missing else "missing",
                     scaffold_missing=len(missing),
                 )
@@ -198,7 +274,13 @@ class RealSettingsDataSource:
                 exists=os.path.isdir(os.path.join(publish_root, name)),
             ),
         ]
+        # The layout contract is two levels (<dev>/projects/<root-name>). A root
+        # that shallow yields "/" as $DEV — planning "/cache/<show>" would try to
+        # create folders at the filesystem root, so those entries are dropped
+        # and validate_project() warns instead of inventing a location.
         dev_root = compute_dev_root(root)
+        if dev_root == "/":
+            dev_root = ""
         for sub in DEV_SUBDIRS:
             path = os.path.join(dev_root, sub, name) if dev_root else ""
             rows.append(
@@ -276,6 +358,12 @@ class RealSettingsDataSource:
                 "warn", "W_ROOT", f"Work folder does not exist: {os.path.join(root, name)}",
                 "Repair scaffold will create it.", target=name,
             ))
+        if root and compute_dev_root(root) in ("", "/"):
+            out.append(DiagnosticRow(
+                "warn", "W_DEV",
+                f"Cannot derive $DEV from {root}",
+                "Expected <dev>/projects/<root-name>; cache/asset/render "
+                "folders are skipped for this root.", target=name))
         if publish_root and not os.path.isdir(os.path.join(publish_root, name)):
             out.append(DiagnosticRow(
                 "warn", "W_PUB", f"Publish folder does not exist: {os.path.join(publish_root, name)}",
@@ -302,10 +390,23 @@ class RealSettingsDataSource:
                                         group="sequences", required=False,
                                         exists=os.path.isdir(os.path.join(root, name, str(seq)))))
         missing = [p.path for p in plan if p.path and not p.exists]
+
+        # The show's baseline environment (card C8): seeded in memory now, so the
+        # dry run can quote the same number as the real run. A store that cannot
+        # be parsed is never rewritten — the project is still created, and the
+        # reason shows up in the diagnostics.
+        store, store_error = self._load_store()
+        env_written = 0
+        if store is None:
+            diagnostics += (store_error,) if store_error else ()
+        else:
+            env_written = store.apply_show_skeleton(name)
+
         if dry_run:
             return ApplySummary(created=tuple(missing),
                                 skipped=tuple(p.path for p in plan if p.path and p.exists),
-                                diagnostics=diagnostics)
+                                diagnostics=diagnostics,
+                                env_written=env_written)
 
         created: list[str] = []
         errors: list[tuple[str, str]] = []
@@ -329,9 +430,17 @@ class RealSettingsDataSource:
         except Exception as exc:
             errors.append((name, f"database: {exc}"))
 
+        if env_written and store is not None:
+            try:
+                store.save()
+            except OSError as exc:
+                errors.append(("env.yaml", str(exc)))
+                env_written = 0
+
         return ApplySummary(created=tuple(created),
                             skipped=tuple(p.path for p in plan if p.path and p.exists),
-                            errors=tuple(errors), diagnostics=diagnostics)
+                            errors=tuple(errors), diagnostics=diagnostics,
+                            env_written=env_written)
 
     # -- Environment -------------------------------------------------------
 
@@ -362,41 +471,111 @@ class RealSettingsDataSource:
             project=row.name,
             sequence=seq,
             shot=shot,
-            department=department or "fx",
+            # Never invent a department: an unset context must resolve to an
+            # empty DEPARTMENT, or the preview reports a value nobody chose.
+            department=department,
             dcc=dcc or (roles[0] if roles else ""),
         )
         return ctx, f"{row.name}/{seq}/{shot}" if seq else row.name
 
     def env_rows(self) -> list[EnvRow]:
-        """One row per injected variable, computed from the first enabled show.
+        """One row per variable a launch would inject, for the sample show.
 
-        There is no ``env.yaml`` store yet, so every row is ``derived``: the
-        value a launch would inject, not something a user can edit here.
+        Derived values first, then whatever ``env.yaml`` puts on top of them: a
+        stored row keeps its own ``scope``/``scope_key`` and description, and a
+        key that only exists in the store shows up here as a new row (that is how
+        a show-scoped ``OCIO`` appears before anything else defines it).
         """
         ctx, sample = self._sample_context()
+        if not ctx:
+            return []
+        store, _error = self._load_store()
         whitelist = self._env_whitelist()
         roles = self._dcc_roles()
+
+        resolved = resolve(
+            ctx, store,
+            show=ctx.get("SHOW", ""),
+            dcc=ctx.get("DCC", ""),
+            department=ctx.get("DEPARTMENT", ""),
+        )
+        expanded = self._expand_stored(resolved, ctx)
         return [
             EnvRow(
-                name=name,
-                value=value,
-                scope="derived",
+                name=entry.name,
+                value=expanded.get(entry.name, entry.value),
+                scope=entry.source,
+                scope_key=entry.scope_key,
                 enabled=True,
-                description=f"computed at launch for {sample}" if sample else
-                            "computed at launch",
-                injected_to=tuple(roles) if name in whitelist else (),
+                description=entry.description or (
+                    f"computed at launch for {sample}" if sample
+                    else "computed at launch"),
+                injected_to=tuple(roles) if entry.name in whitelist else (),
             )
-            for name, value in sorted(ctx.items())
+            for entry in resolved
         ]
 
     def save_env_row(self, row: EnvRow) -> list[DiagnosticRow]:
-        """Read-only for now: no ``env.yaml`` store exists (plan U7)."""
-        return [DiagnosticRow(
-            "warn", "W_NO_STORE",
-            f"Cannot edit {row.name}: the environment store is not implemented yet",
-            "Rows are derived from the launch environment; overrides land in U7.",
-            target=row.name,
-        )]
+        """Upsert one override into ``config/env.yaml``.
+
+        Only the ``show`` layer is writable in this version (card C4): the other
+        three layers are the same code repeated, and the settings panel always
+        has exactly one project in context, so ``show`` is the layer a user can
+        mean without being asked.
+
+        Returns:
+            Problems worth showing. An empty list means the row was written.
+
+        A store that cannot be parsed is **not** overwritten: an unreadable file
+        may hold hand-written overrides, and silently regenerating it would
+        delete them without a trace.
+        """
+        out: list[DiagnosticRow] = []
+        name = row.name or ""
+        if not name.strip():
+            return [DiagnosticRow("error", "E_ENV_NAME", "Variable name is empty.",
+                                  "Type a name such as ASSET_ROOT.", target=name)]
+        if not NAME_PATTERN.match(name):
+            return [DiagnosticRow(
+                "error", "E_ENV_NAME", f"Invalid variable name: {name!r}",
+                "Letters, digits and underscores; must not start with a digit.",
+                target=name)]
+
+        store, error = self._load_store()
+        if error is not None:
+            return [error]
+
+        ctx, _sample = self._sample_context()
+        scope_key = row.scope_key or ctx.get("SHOW", "")
+        if not scope_key:
+            return [DiagnosticRow(
+                "error", "E_ENV_NOSHOW",
+                "No project in context, so a show-scoped override has no home.",
+                "Select a project in the context bar first.", target=name)]
+
+        whitelist = self._env_whitelist()
+        if name not in whitelist and name not in WHITELIST_EXCEPTIONS:
+            out.append(DiagnosticRow(
+                "warn", "W_WHITELIST",
+                f"{name} is not in dcc.yaml: pipeline.env_vars",
+                "It is stored, but the DCC layer will drop it at launch.",
+                target=name))
+        if name in GUARDED_SCOPE_KEYS:
+            out.append(DiagnosticRow(
+                "warn", "W_GUARDED",
+                f"{name} must not diverge between departments",
+                "Colour management and timing decide whether two departments' "
+                "output can be compared at all.", target=name))
+
+        store.put("show", scope_key, name, row.value,
+                  description=row.description, secret=row.secret)
+        try:
+            store.save()
+        except OSError as exc:
+            return [DiagnosticRow(
+                "error", "E_ENV_WRITE", f"Cannot write {self.env_store_path.name}: {exc}",
+                "Check that the config directory is writable.", target=name)]
+        return out
 
     def delete_env_row(self, name: str, scope: str,
                        scope_key: str) -> list[DiagnosticRow]:
@@ -408,8 +587,62 @@ class RealSettingsDataSource:
             target=name,
         )]
 
+    # -- Undo --------------------------------------------------------------
+
+    def _backup_paths(self) -> list[Path]:
+        """Backup copies of the store, oldest → newest.
+
+        ``EnvConfig.save`` writes ``env.yaml.bak.<epoch-ms>`` before replacing
+        the file, so the **newest** name is "the store as it was before the last
+        write" — that is the one a Revert restores. Millisecond stamps are
+        fixed-width, hence a plain name sort is also chronological.
+        """
+        store = self.env_store_path
+        try:
+            names = [p for p in store.parent.iterdir()
+                     if p.name.startswith(f"{store.name}{BACKUP_SUFFIX}")]
+        except OSError:
+            return []
+        return sorted(names, key=lambda p: p.name)
+
+    def has_env_backup(self) -> bool:
+        """True when a Revert has something to restore (drives the button)."""
+        return bool(self._backup_paths())
+
+    def revert_env(self) -> list[DiagnosticRow]:
+        """Restore ``env.yaml`` from the newest backup.
+
+        The backup is *copied* back rather than consumed: restoring is
+        idempotent, and throwing the backup away would make a mis-click
+        unrecoverable — the exact failure this button exists to undo.
+
+        Returns:
+            Problems worth showing. An empty list means the file was restored
+            and the next render will show the pre-edit values.
+        """
+        backups = self._backup_paths()
+        if not backups:
+            return [DiagnosticRow(
+                "warn", "W_NO_BACKUP", "Nothing to revert to",
+                "The first edit creates a backup next to env.yaml.",
+                target="env.yaml")]
+        latest = backups[-1]
+        store = self.env_store_path
+        try:
+            # Same write discipline as a save: stage then replace, so an
+            # interrupted revert cannot leave a half-written store behind.
+            tmp = store.with_name(f".{store.name}.tmp")
+            shutil.copy2(latest, tmp)
+            os.replace(tmp, store)
+        except OSError as exc:
+            return [DiagnosticRow(
+                "error", "E_ENV_REVERT", f"Cannot restore {latest.name}: {exc}",
+                "Check that the config directory is writable.", target="env.yaml")]
+        return []
+
     def dcc_roles(self) -> tuple[str, ...]:
         """Configured DCC keys (``dcc.yaml: dcc``)."""
+
         return self._dcc_roles()
 
     def departments(self) -> tuple[str, ...]:
@@ -423,10 +656,34 @@ class RealSettingsDataSource:
 
     def resolved(self, show: str, dcc: str,
                  department: str) -> list[ResolvedRow]:
-        """The exact environment a launch would produce, resolved for real."""
+        """The exact environment a launch would produce, resolved for real.
+
+        The scope keys come from the context the rows *actually* describe (the
+        sample show/dcc), not from what the caller asked for: when the caller
+        names a show this backend does not know, the rows fall back to a real one
+        and an override for the unknown name would be a lie.
+        """
         ctx, _sample = self._sample_context(show=show, dcc=dcc, department=department)
-        return [ResolvedRow(name=name, value=value, source="derived")
-                for name, value in sorted(ctx.items())]
+        if not ctx:
+            return []
+        store, _error = self._load_store()
+        rows = resolve(
+            ctx, store,
+            show=ctx.get("SHOW", ""),
+            dcc=ctx.get("DCC", ""),
+            department=ctx.get("DEPARTMENT", ""),
+        )
+        expanded = self._expand_stored(rows, ctx)
+        return [
+            ResolvedRow(
+                name=entry.name,
+                value=expanded.get(entry.name, entry.value),
+                source=entry.source,
+                scope_key=entry.scope_key,
+                shadowed=entry.shadowed,
+            )
+            for entry in rows
+        ]
 
     def diagnostics(self) -> list[DiagnosticRow]:
         """Real problems: unreachable database, missing folders, whitelist drift."""
@@ -475,4 +732,8 @@ class RealSettingsDataSource:
                     "warn", "W_DEV", f"$DEV does not exist: {dev_root}",
                     "CACHE/ASSET/RENDER roots point outside the disk.", target="DEV",
                 ))
+
+        _store, store_error = self._load_store()
+        if store_error is not None:
+            out.append(store_error)
         return out

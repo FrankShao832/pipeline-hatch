@@ -149,16 +149,25 @@ class ConfigManager:
 
     # -- Loading -------------------------------------------------------------
 
-    def _expand_value(self, value: str) -> str:
+    def _expand_value(self, value: str, extra: dict[str, str] | None = None) -> str:
         """Expand ``~`` and ``$VAR``/``${VAR}`` in a config string.
 
         Undefined variables are left verbatim so misconfiguration stays
         visible instead of silently collapsing to an empty path.
+
+        Args:
+            value: The raw string.
+            extra: Per-context names (``SHOW``, ``SEQ``, …) that take precedence
+                over the process environment — used by the settings layer, where
+                an override may reference ``${SHOW}`` and the value has to show
+                the way the launch will resolve it.
         """
         value = os.path.expanduser(value)
 
         def _replace(match):
             name = match.group(1) or match.group(2)
+            if extra and name in extra:
+                return extra[name]
             if name in os.environ:
                 return os.environ[name]
             if name == "DEV":
@@ -168,6 +177,10 @@ class ConfigManager:
             return match.group(0)
 
         return _ENV_PATTERN.sub(_replace, value)
+
+    def expand_value(self, value: str, extra: dict[str, str] | None = None) -> str:
+        """Public form of :meth:`_expand_value` for callers outside the manager."""
+        return self._expand_value(value, extra)
 
     def _expand(self, obj: Any) -> Any:
         """Recursively expand env placeholders through a loaded config tree."""
