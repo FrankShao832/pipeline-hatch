@@ -3,7 +3,7 @@
 A configuration-driven DCC (Digital Content Creation) application launcher for VFX/animation pipelines. Built with PySide6.
 
 > **Current Version:** 2.2.0  
-> **Status:** Development preview — settings panel landed, 328 tests
+> **Status:** Development preview — settings panel landed, 338 tests
 
 ---
 
@@ -22,7 +22,7 @@ A configuration-driven DCC (Digital Content Creation) application launcher for V
   settings panel with a one-click Revert
 - 🆕 **Project Creation** — name, roots and a dry-run preview of exactly which
   folders and overrides will be written, then the real thing
-- 🧪 **Fully Tested** — 328 unit tests covering all core modules
+- 🧪 **Fully Tested** — 338 unit tests covering all core modules
 
 ---
 
@@ -206,6 +206,14 @@ scopes:
   **Revert** restores.
 - The store is only ever written by the settings panel, and only at `show` scope
   in this version; `derived` values are never stored (two truths = drift).
+- **A launch reads it.** `build_env_context()` produces the derived layer,
+  `merge_env_store()` lays the store on top, and that merged mapping is what the
+  DCC process receives — the panel's preview and the real launch call the same
+  function, so a value you edit cannot be "saved but not injected".
+- Two dev tools read the same code from a terminal:
+  `tools/print_env.py` (the resolved environment, `--export` for `NAME=value`)
+  and `tools/verify_launch_env.py` (runs a probe *inside* mayapy / hython / Nuke
+  with the launcher's env and prints what the DCC actually sees).
 
 ### Project Settings (`config/projects.yaml`)
 
@@ -260,7 +268,7 @@ pipeline-hatch/
 │   │   └── imgs/             # Icons and images
 │   └── utils/
 │       └── logger.py         # Logging module
-├── tests/                    # Unit tests (328 tests)
+├── tests/                    # Unit tests (338 tests)
 │   ├── test_config.py        # ConfigManager + shipped dcc.yaml guards
 │   ├── test_dcc.py           # DCC command building / launch cwd
 │   ├── test_main_window*.py  # Window wiring, launch, settings, workdirs
