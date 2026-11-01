@@ -131,6 +131,7 @@ class SettingsWindow(QDialog):
         # A brand-new project becomes the context of the whole window: the
         # point of creating one here is to configure it immediately.
         self.project_panel.project_created.connect(self._on_project_created)
+        self.project_panel.shots_added.connect(self._on_shots_added)
 
         self.preview_panel = _panel(self.preview_host)
         self.preflight_panel = _panel(self.preflight_page)
@@ -360,6 +361,16 @@ class SettingsWindow(QDialog):
         self._select(self.project_combo, name)
         self._push_context()
         self.set_saved_now(f"just now · created {name}")
+        self.projects_changed.emit()
+
+    def _on_shots_added(self, project: str, sequence: str, shot: str) -> None:
+        """Report the batch that just landed, and reload what depends on it.
+
+        The context is left where it is: adding shots is a data-axis act, and
+        the shot the user wants to launch into is a deliberate choice, not a
+        side effect of a bulk import.
+        """
+        self.set_saved_now(f"just now · added {sequence}/{shot}")
         self.projects_changed.emit()
 
     # -- Undo --------------------------------------------------------------

@@ -6,7 +6,7 @@ import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 
 class SeqShotTreeWidget(QTreeWidget):
@@ -18,9 +18,12 @@ class SeqShotTreeWidget(QTreeWidget):
     Signals:
         shot_selected(seq: str, shot: str): Emitted when a shot item
             (leaf node) is clicked.
+        rename_requested(seq: str, shot: str): Emitted from the context menu on
+            a shot node; the window owns the dialog and the backend.
     """
 
     shot_selected = Signal(str, str)
+    rename_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         """Initialize the sequence/shot tree.
@@ -31,6 +34,10 @@ class SeqShotTreeWidget(QTreeWidget):
         super().__init__(parent)
         self.setHeaderHidden(True)
         self.itemClicked.connect(self._on_item_clicked)
+        # A shot node's right-click opens one action; sequences are containers
+        # and have nothing to rename in this version.
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
         self._watcher = None
         self._watched_paths: set[str] = set()
 
@@ -84,6 +91,28 @@ class SeqShotTreeWidget(QTreeWidget):
         parent = item.parent()
         if parent:
             self.shot_selected.emit(parent.text(0), item.text(0))
+
+    def _on_context_menu(self, pos) -> None:
+        """Offer the shot-level actions at *pos*."""
+        item = self.itemAt(pos)
+        if item is None or item.parent() is None:
+            return
+        menu = QMenu(self)
+        action = menu.addAction("Rename…")
+        action.triggered.connect(lambda: self._emit_rename_for(item))
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _emit_rename_for(self, item: QTreeWidgetItem | None) -> bool:
+        """Ask to rename the shot under *item*.
+
+        Returns:
+            True when a shot node was found (and the signal emitted), False for
+            sequences and empty space.
+        """
+        if item is None or item.parent() is None:
+            return False
+        self.rename_requested.emit(item.parent().text(0), item.text(0))
+        return True
 
     def _watch(self, path: str) -> None:
         """Add a path to the file watcher, avoiding duplicates.

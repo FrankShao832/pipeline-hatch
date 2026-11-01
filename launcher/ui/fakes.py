@@ -15,15 +15,22 @@ checks are deliberately shallow. Never use it as the source of truth.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from .viewmodels import (
+    SHOT_STATUS_DUPLICATE,
+    SHOT_STATUS_EXISTS,
+    SHOT_STATUS_NEW,
     ApplySummary,
     DiagnosticRow,
     EnvRow,
     ProjectRow,
     ResolvedRow,
     ScaffoldPlanRow,
+    ShotPlanRow,
+    classify_shots,
+    shot_name_problem,
 )
 
 _ALL_DCCS: tuple[str, ...] = ("maya", "houdini", "nuke", "katana")
@@ -102,6 +109,10 @@ class FakeSettingsDataSource:
         self.mode = mode
         self._repaired: set[str] = set()
         self._created: list[ProjectRow] = []
+        self._added_shots: dict[str, set[str]] = {}
+        #: Shots created at runtime are untouched, so they can be renamed; the
+        #: fixture's own shots stand in for work in progress and cannot.
+        self._empty_shots: set[str] = set()
         self._env_backups: list[list[EnvRow]] = []
         self._env: list[EnvRow] = [] if mode == "empty" else [
             EnvRow(name=n, value=v, scope=s, scope_key=k, enabled=e,
@@ -225,6 +236,117 @@ class FakeSettingsDataSource:
             env_show_count=env_written, scaffold_state="complete", scaffold_missing=0,
         ))
         return ApplySummary(created=created, env_written=env_written)
+
+    # -- Shots -------------------------------------------------------------
+    #
+    # The fixture answers from a set of paths instead of the filesystem, but it
+    # classifies with the very same ``classify_shots`` the real source uses —
+    # a fixture that reimplemented the rules would let the dialog's badges pass
+    # tests while disagreeing with the pipeline.
+
+    def _shot_root(self, name: str) -> str:
+        return f"/Volumes/Development/projects/y_pipeline_projects/{name}"
+
+    def _existing_shot_paths(self, name: str) -> set[str]:
+        """Paths that "exist" in the fixture, following each project's state.
+
+        ``complete`` (or repaired) projects have two sequences with two shots
+        each, mirroring :meth:`scaffold_plan`; anything added at runtime is kept.
+        """
+        row = self._fixture_row(name)
+        complete = name in self._repaired or (
+            row is not None and row.scaffold_state == "complete")
+        root = self._shot_root(name)
+        paths: set[str] = set()
+        if complete:
+            for seq in ("seq001", "seq002"):
+                paths.add(f"{root}/{seq}")
+                for shot in ("sh010", "sh020"):
+                    paths.add(f"{root}/{seq}/{shot}")
+        paths |= self._added_shots.get(name, set())
+        return paths
+
+    def sequences(self, name: str) -> list[str]:
+        root = self._shot_root(name) + "/"
+        return sorted({p[len(root):] for p in self._existing_shot_paths(name)
+                       if p.startswith(root) and "/" not in p[len(root):]})
+
+    def shots(self, name: str, sequence: str) -> list[str]:
+        root = f"{self._shot_root(name)}/{sequence}/"
+        return sorted({p[len(root):] for p in self._existing_shot_paths(name)
+                       if p.startswith(root) and "/" not in p[len(root):]})
+
+    def plan_shots(self, name: str,
+                   entries: Sequence[tuple[str, str]]) -> tuple[ShotPlanRow, ...]:
+        root = self._shot_root(name)
+        existing = self._existing_shot_paths(name)
+
+        def path_for(sequence: str, shot: str) -> str:
+            return f"{root}/{sequence}/{shot}" if shot else f"{root}/{sequence}"
+
+        return classify_shots(entries, path_for, lambda p: p in existing)
+
+    def add_shots(self, name: str, entries: Sequence[tuple[str, str]],
+                  dry_run: bool) -> ApplySummary:
+        rows = self.plan_shots(name, entries)
+        invalid = [r for r in rows if r.blocks]
+        if invalid:
+            return ApplySummary(
+                errors=tuple((f"{r.sequence or '?'}/{r.shot or '?'}", r.message)
+                             for r in invalid),
+                diagnostics=tuple(
+                    DiagnosticRow("error", "E_SHOTNAME",
+                                  f"{r.sequence}/{r.shot}: {r.message}",
+                                  "A shot name is one path segment: no '/', no "
+                                  "leading '.', no spaces.", target=r.shot)
+                    for r in invalid),
+            )
+        created = tuple(r.path for r in rows if r.status == SHOT_STATUS_NEW)
+        skipped = tuple(r.path for r in rows
+                        if r.status in (SHOT_STATUS_EXISTS, SHOT_STATUS_DUPLICATE))
+        if dry_run:
+            return ApplySummary(created=created, skipped=skipped)
+        bucket = self._added_shots.setdefault(name, set())
+        bucket.update(created)
+        self._empty_shots.update(created)
+        # The sequence folder appears with its first shot, never on its own.
+        bucket.update({p.rsplit("/", 1)[0] for p in created})
+        return ApplySummary(created=created, skipped=skipped)
+
+    def rename_shot(self, name: str, sequence: str, shot: str,
+                    new_name: str, dry_run: bool) -> ApplySummary:
+        root = self._shot_root(name)
+        old_path = f"{root}/{sequence}/{shot}"
+        new_name = (new_name or "").strip()
+        new_path = f"{root}/{sequence}/{new_name}"
+        existing = self._existing_shot_paths(name)
+
+        def fail(code: str, message: str) -> ApplySummary:
+            return ApplySummary(
+                errors=((shot, message),),
+                diagnostics=(DiagnosticRow("error", code, message,
+                                           "Only an untouched shot can be renamed.",
+                                           target=shot),))
+
+        if old_path not in existing:
+            return fail("E_NO_SHOT", f"Shot folder is gone: {old_path}")
+        if old_path not in self._empty_shots:
+            return fail("E_NOT_EMPTY", f"{sequence}/{shot} already has files in it")
+        problem = shot_name_problem(new_name)
+        if problem:
+            return fail("E_NAME", f"Invalid name: {problem}")
+        if new_name == shot:
+            return fail("E_SAME", "That is the current name")
+        if new_path in existing:
+            return fail("E_EXISTS", f"{sequence}/{new_name} already exists")
+        if dry_run:
+            return ApplySummary(created=(new_path,))
+        bucket = self._added_shots.setdefault(name, set())
+        bucket.discard(old_path)
+        bucket.add(new_path)
+        self._empty_shots.discard(old_path)
+        self._empty_shots.add(new_path)
+        return ApplySummary(created=(new_path,))
 
     # -- Environment ------------------------------------------------------
 

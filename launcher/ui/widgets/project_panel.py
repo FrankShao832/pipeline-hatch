@@ -46,6 +46,7 @@ from launcher.ui.viewmodels import (
     SettingsDataSource,
     GUARDED_SCOPE_KEYS,
 )
+from launcher.ui.widgets.add_shots_dialog import AddShotsDialog
 from launcher.ui.widgets.new_project_dialog import NewProjectDialog
 from launcher.ui.widgets.style import COLUMN_TITLE_QSS
 
@@ -101,9 +102,13 @@ class ProjectPanel(QWidget):
         project_created: Emitted with the new project's name after the New
             Project dialog succeeded, so the window can move its context onto
             the show that was just created instead of leaving it blank.
+        shots_added: Emitted with ``(project, sequence, shot)`` after Add Shots
+            succeeded, naming the last shot actually created, so the window can
+            put the context on work that exists rather than on an empty show.
     """
 
     project_created = Signal(str)
+    shots_added = Signal(str, str, str)
 
     def __init__(self, data_source: SettingsDataSource,
                  parent: QWidget | None = None) -> None:
@@ -201,11 +206,19 @@ class ProjectPanel(QWidget):
         self.repair_btn = QPushButton("Repair scaffold…")
         self.repair_btn.setToolTip("Create the missing skeleton folders")
         self.repair_btn.clicked.connect(self._on_repair)
+        # Same row as Repair scaffold on purpose: both are "make the tree match
+        # what it should be", both preview before they write. Adding a shot is
+        # the repeatable half of the project axis (N -> N+1), repairing is the
+        # restorative half — one place to look when a tree is wrong.
+        self.add_shots_btn = QPushButton("Add shots…")
+        self.add_shots_btn.setToolTip("Create shot folders in batches")
+        self.add_shots_btn.clicked.connect(self._on_add_shots)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(6)
         buttons.addWidget(self.rerun_btn)
         buttons.addWidget(self.repair_btn)
+        buttons.addWidget(self.add_shots_btn)
         buttons.addStretch(1)
 
         self.repair_status = QLabel("")
@@ -339,6 +352,25 @@ class ProjectPanel(QWidget):
             f"Created {dialog.project_name} · "
             f"{len(summary.created) if summary else 0} folder(s), "
             f"{summary.env_written if summary else 0} override(s)")
+
+    def _on_add_shots(self) -> None:
+        """Open the batch dialog; on success announce the last shot created."""
+        if not self.project:
+            QMessageBox.information(self, "Add shots",
+                                    "Select a project first.")
+            return
+        dialog = AddShotsDialog(self._data_source, self.project, parent=self)
+        if dialog.exec() != AddShotsDialog.DialogCode.Accepted:
+            return
+        summary = dialog.summary
+        created = len(summary.created) if summary else 0
+        skipped = len(summary.skipped) if summary else 0
+        self.repair_status.setText(
+            f"{_plural(created, 'folder')} created · {skipped} already there")
+        sequence, shot = dialog.last_created
+        if sequence and shot:
+            self.shots_added.emit(self.project, sequence, shot)
+        self.refresh()
 
     def _on_danger_toggled(self, checked: bool) -> None:
         self.danger_body.setVisible(checked)

@@ -47,8 +47,18 @@ class TestProjects:
         rows = {row.name: row for row in source.projects()}
         cyberpunk = rows["CyberPunk"]
 
-        assert cyberpunk.seqs == 3
-        assert cyberpunk.shots == 20
+        # Derived from the tree, not pinned: the point is that the row *reads*
+        # the disk. Fixed numbers here went stale the moment the Add Shots
+        # dialog created seq004_crush during its first real use (2026-11-01).
+        project_dir = os.path.join(cyberpunk.root, cyberpunk.name)
+        sequences = [name for name in os.listdir(project_dir)
+                     if os.path.isdir(os.path.join(project_dir, name))]
+        shots = sum(len(os.listdir(os.path.join(project_dir, sequence)))
+                    for sequence in sequences)
+
+        assert cyberpunk.seqs == len(sequences)
+        assert cyberpunk.shots == shots
+        assert cyberpunk.seqs > 0 and cyberpunk.shots > 0
         assert cyberpunk.source == "db"
 
     def test_scaffold_state_reflects_the_folders(self, source):

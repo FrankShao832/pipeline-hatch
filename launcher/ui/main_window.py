@@ -24,6 +24,7 @@ from launcher.ui.widgets import (
 from launcher.core.dcc_manager import dcc_manager
 from launcher.core.launch_env import build_env_context, merge_env_store
 from launcher.ui.real_source import RealSettingsDataSource
+from launcher.ui.widgets.rename_shot_dialog import RenameShotDialog
 from launcher.ui.settings_window import SettingsPanel
 from launcher.ui.viewmodels import SettingsContext
 from launcher.utils.logger import logger
@@ -227,6 +228,7 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._open_settings)
         self.project_tree.project_selected.connect(self._on_project_selected)
         self.seq_shot_tree.shot_selected.connect(self._on_shot_selected)
+        self.seq_shot_tree.rename_requested.connect(self._on_rename_shot)
         self.role_menu.role_changed.connect(self._on_role_changed)
         self.department_menu.department_changed.connect(self._on_department_changed)
         self.file_watcher.directoryChanged.connect(self._on_directory_changed)
@@ -312,6 +314,32 @@ class MainWindow(QMainWindow):
         self.project = project_name
         self._watch_path(os.path.join(project_root, project_name))
         self.seq_shot_tree.load_for_project(project_root, project_name)
+
+    def _rename_source(self):
+        """Backend for the rename dialog, built on first use.
+
+        Only a rename needs a settings backend, so the main window does not open
+        one at startup; tests inject ``window._data_source`` instead.
+        """
+        source = getattr(self, "_data_source", None)
+        if source is None:
+            source = RealSettingsDataSource()
+            self._data_source = source
+        return source
+
+    def _on_rename_shot(self, sequence: str, shot: str) -> None:
+        """Rename one untouched shot, then reload the tree it lives in.
+
+        The tree is populated by scanning the disk, so it only needs to be told
+        to look again — no model to keep in sync.
+        """
+        if not getattr(self, "project", "") or not getattr(self, "root_path", ""):
+            return
+        dialog = RenameShotDialog(self._rename_source(), self.project,
+                                  sequence, shot, parent=self)
+        if dialog.exec() != RenameShotDialog.DialogCode.Accepted:
+            return
+        self._load_seq_shot(self.project, self.root_path)
 
     def _on_shot_selected(self, seq: str, shot: str) -> None:
         """Handle shot selection from the sequence/shot tree.

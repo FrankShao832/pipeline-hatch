@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -35,12 +36,18 @@ from launcher.core.env_store import EnvConfig, EnvStoreError
 from launcher.core.launch_env import DEV_SUBDIRS, build_env_context, compute_dev_root
 from launcher.ui.viewmodels import (
     GUARDED_SCOPE_KEYS,
+    SHOT_STATUS_DUPLICATE,
+    SHOT_STATUS_EXISTS,
+    SHOT_STATUS_NEW,
     ApplySummary,
     DiagnosticRow,
     EnvRow,
     ProjectRow,
     ResolvedRow,
     ScaffoldPlanRow,
+    ShotPlanRow,
+    classify_shots,
+    shot_name_problem,
 )
 
 NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -52,6 +59,27 @@ WHITELIST_EXCEPTIONS: tuple[str, ...] = ("JOB",)
 
 #: Suffix of the one-backup-per-save copies ``EnvConfig.save`` leaves behind.
 BACKUP_SUFFIX = ".bak."
+
+
+def shot_is_empty(path: str) -> bool:
+    """True when nothing but hidden files live under *path*.
+
+    ``.DS_Store`` and friends are not work product — Finder makes them just by
+    looking at a folder — so they do not disqualify a shot from being renamed.
+    Any real file, at any depth, does: that is somebody's work.
+    """
+    for _root, _dirs, files in os.walk(path):
+        if any(not name.startswith(".") for name in files):
+            return False
+    return True
+
+
+def _rename_error(code: str, message: str, hint: str, target: str) -> ApplySummary:
+    """A refusal, shaped like every other apply result in this module."""
+    return ApplySummary(
+        errors=((target, message),),
+        diagnostics=(DiagnosticRow("error", code, message, hint, target=target),),
+    )
 
 
 def _list_dirs(path: str) -> list[str]:
@@ -441,6 +469,179 @@ class RealSettingsDataSource:
                             skipped=tuple(p.path for p in plan if p.path and p.exists),
                             errors=tuple(errors), diagnostics=diagnostics,
                             env_written=env_written)
+
+    # -- Shots -------------------------------------------------------------
+
+    def _shot_paths(self, name: str):
+        """Return ``(show_path, path_for)`` for the project tree, or ``None``.
+
+        ``path_for(sequence, "")`` answers for the sequence folder itself, which
+        is how the plan tells a new sequence from an existing one.
+        """
+        row = self._find(name)
+        if row is None:
+            return None
+        show_path = os.path.join(row.root, name)
+
+        def path_for(sequence: str, shot: str) -> str:
+            if shot:
+                return os.path.join(show_path, sequence, shot)
+            return os.path.join(show_path, sequence)
+
+        return show_path, path_for
+
+    def sequences(self, name: str) -> list[str]:
+        """Sequence folders that already exist for *name* (``[]`` when unknown)."""
+        located = self._shot_paths(name)
+        if located is None:
+            return []
+        return _list_dirs(located[0])
+
+    def shots(self, name: str, sequence: str) -> list[str]:
+        """Shot folders already inside *sequence* (``[]`` when unknown)."""
+        located = self._shot_paths(name)
+        if located is None or not sequence:
+            return []
+        return _list_dirs(os.path.join(located[0], sequence))
+
+    def plan_shots(self, name: str,
+                   entries: Sequence[tuple[str, str]]) -> tuple[ShotPlanRow, ...]:
+        """Classify an Add Shots batch against the tree on disk (no writes)."""
+        located = self._shot_paths(name)
+        if located is None:
+            return ()
+        return classify_shots(entries, located[1], os.path.isdir)
+
+    def add_shots(self, name: str, entries: Sequence[tuple[str, str]],
+                  dry_run: bool) -> ApplySummary:
+        """Create ``<show>/<seq>/<shot>`` for every row the plan calls new.
+
+        A sequence is only ever created as the parent of a shot (an empty
+        sequence folder is noise), an existing shot is skipped rather than
+        reported as an error (running the batch twice must be safe), and nothing
+        is registered in the database: the folder is an intent, the asset
+        library records the fact when something is actually published.
+        """
+        located = self._shot_paths(name)
+        if located is None:
+            return ApplySummary(
+                errors=((name, "unknown project"),),
+                diagnostics=(DiagnosticRow("error", "E_PROJECT",
+                                           f"Unknown project: {name}", target=name),),
+            )
+        show_path, path_for = located
+        plan = classify_shots(entries, path_for, os.path.isdir)
+
+        invalid = [row for row in plan if row.blocks]
+        if invalid:
+            return ApplySummary(
+                errors=tuple((f"{r.sequence or '?'}/{r.shot or '?'}", r.message)
+                             for r in invalid),
+                diagnostics=tuple(
+                    DiagnosticRow("error", "E_SHOTNAME",
+                                  f"{r.sequence or '?'}/{r.shot or '?'}: {r.message}",
+                                  "A shot name is one path segment: no '/', no "
+                                  "leading '.', no spaces.", target=r.shot)
+                    for r in invalid),
+            )
+
+        diagnostics: tuple[DiagnosticRow, ...] = ()
+        if not os.path.isdir(show_path):
+            diagnostics = (DiagnosticRow(
+                "warn", "W_SHOWROOT", f"Project folder is missing: {show_path}",
+                "It will be created together with the shots.", target=name),)
+
+        todo = [r.path for r in plan if r.status == SHOT_STATUS_NEW and r.path]
+        skipped = [r.path for r in plan
+                   if r.status in (SHOT_STATUS_EXISTS, SHOT_STATUS_DUPLICATE) and r.path]
+        if dry_run:
+            return ApplySummary(created=tuple(todo), skipped=tuple(skipped),
+                                diagnostics=diagnostics)
+
+        created: list[str] = []
+        errors: list[tuple[str, str]] = []
+        for path in todo:
+            try:
+                os.makedirs(path, exist_ok=True)
+                created.append(path)
+            except OSError as exc:
+                errors.append((path, str(exc)))
+        return ApplySummary(created=tuple(created), skipped=tuple(skipped),
+                            errors=tuple(errors), diagnostics=diagnostics)
+
+    def rename_shot(self, name: str, sequence: str, shot: str,
+                    new_name: str, dry_run: bool) -> ApplySummary:
+        """Rename one shot folder — only while nothing has been filed in it.
+
+        Deliberately narrow. An empty shot is a typo to fix; a shot with files in
+        it is somebody's work and, past the first publish, a name already written
+        into published filenames and into the asset library. "Is it empty?" is
+        the whole gate, and it is cheap: empty means nothing was ever published,
+        which means there is no asset-library row to go stale.
+
+        A published shot is refused outright rather than half-renamed: the
+        folder name can be moved, the name baked into ``shot001_v001.ma`` and
+        ``assets.name`` cannot. Fixing a published name is a new shot plus a
+        re-publish, not a rename.
+        """
+        located = self._shot_paths(name)
+        if located is None:
+            return _rename_error("E_PROJECT", f"Unknown project: {name}",
+                                 "Pick a project that exists.", target=name)
+        show_path, path_for = located
+        old_path = path_for(sequence, shot)
+        new_name = (new_name or "").strip()
+        new_path = path_for(sequence, new_name) if new_name else ""
+
+        if not os.path.isdir(old_path):
+            return _rename_error("E_NO_SHOT", f"Shot folder is gone: {old_path}",
+                                 "Refresh the tree — it may have moved.",
+                                 target=shot)
+        if not shot_is_empty(old_path):
+            return _rename_error(
+                "E_NOT_EMPTY", f"{sequence}/{shot} already has files in it",
+                "Only an untouched shot can be renamed; once work has started "
+                "the name is in the files too.", target=shot)
+
+        row = self._find(name)
+        publish_path = os.path.join(row.publish_root, name, sequence, shot) \
+            if row is not None else ""
+        if publish_path and os.path.isdir(publish_path):
+            return _rename_error(
+                "E_PUBLISHED", f"{sequence}/{shot} already exists on the publish side",
+                "Published shots are renamed by publishing under the new name, "
+                "not by moving folders.", target=shot)
+
+        problem = shot_name_problem(new_name)
+        if problem:
+            return _rename_error("E_NAME", f"Invalid name: {problem}",
+                                 "One path segment: no '/', no leading '.', no "
+                                 "spaces.", target=new_name)
+        if new_name == shot:
+            return _rename_error("E_SAME", "That is the current name",
+                                 "Type a different name.", target=shot)
+        if os.path.exists(new_path):
+            return _rename_error("E_EXISTS", f"{sequence}/{new_name} already exists",
+                                 "Renaming never overwrites an existing shot.",
+                                 target=new_name)
+
+        if dry_run:
+            return ApplySummary(created=(new_path,))
+
+        try:
+            if old_path.lower() == new_path.lower():
+                # Case-only rename on a case-insensitive volume: going through a
+                # staging name is what actually changes the stored casing.
+                staging = old_path + ".renaming"
+                os.rename(old_path, staging)
+                os.rename(staging, new_path)
+            else:
+                os.rename(old_path, new_path)
+        except OSError as exc:
+            return _rename_error("E_RENAME", f"Rename failed: {exc}",
+                                 "Check permissions and whether a DCC holds the "
+                                 "folder open.", target=shot)
+        return ApplySummary(created=(new_path,))
 
     # -- Environment -------------------------------------------------------
 
