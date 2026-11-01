@@ -85,3 +85,42 @@ class TestNukeLaunchCommand:
         assert captured["env"]["SHOW"] == "RainPool"
         assert captured["env"]["PROJECT_ROOT"] == "/fake/projects"
         assert captured["env"]["PUBLISH_ROOT"] == "/fake/publish"
+
+
+class TestWorkdirIsCreatedOnLaunch:
+    """A shot added through "Add shots…" arrives with no department folder.
+
+    The folder follows the department chosen at launch time, so the launch is
+    where it gets made. Without it the artist is either refused ("Project path
+    not found") or, for a DCC that opens on its cwd, dropped somewhere random.
+    """
+
+    def test_launch_creates_the_missing_department_folder(
+            self, window, tmp_path, monkeypatch):
+        shot_dir = tmp_path / "seq001_pond" / "rp_pond_0010"
+        shot_dir.mkdir(parents=True)
+        workdir = shot_dir / "comp"          # resolved, but not on disk yet
+        captured = {}
+        _prepare_nuke(window, workdir, monkeypatch, captured)
+
+        window._launch_dcc()
+
+        assert workdir.is_dir()
+        assert captured.get("cwd") == str(workdir)
+
+    def test_launch_does_not_invent_a_missing_shot(
+            self, window, tmp_path, monkeypatch):
+        # Only the department level may be created: a stale selection naming a
+        # shot that is gone must not silently rebuild the shot tree.
+        workdir = tmp_path / "seq001_pond" / "rp_pond_0010" / "comp"
+        captured = {}
+        shown = []
+        _prepare_nuke(window, workdir, monkeypatch, captured)
+        monkeypatch.setattr(window, "_show_info", shown.append)
+
+        window._launch_dcc()
+
+        assert not workdir.exists()
+        assert captured == {}, "no DCC should be spawned"
+        assert "Project path not found" in shown[0]
+

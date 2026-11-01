@@ -478,6 +478,13 @@ class MainWindow(QMainWindow):
                     file_name = name
                     file_path = os.path.join(self.file_path, name)
 
+        # A shot added through "Add shots…" has no folder for this department
+        # yet: resolve_workdir reports the folder it *should* have, not one that
+        # exists. Make it here — only the department level, and only when the
+        # shot itself is there, so a stale selection cannot invent shots.
+        if self.file_path and os.path.isdir(os.path.dirname(self.file_path)):
+            os.makedirs(self.file_path, exist_ok=True)
+
         # Check if target path exists
         if file_path:
             if not os.path.exists(file_path):
