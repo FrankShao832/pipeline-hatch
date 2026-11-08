@@ -1,5 +1,6 @@
 """Houdini DCC implementation."""
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +33,26 @@ class HoudiniDCC(BaseDCC):
         if file_path:
             cmd.append(file_path)
         return cmd
+
+    def launch_cwd(self, project_path: Optional[str] = None) -> Optional[str]:
+        """Open Houdini *in* the shot workdir.
+
+        Houdini takes no path for the work folder: ``flags.file`` is empty and
+        ``prepare_environment`` hands the folder over as ``JOB``, which Houdini
+        ignores until something asks for it. Without a cwd the file browser and
+        every relative path start wherever the launcher itself was started — the
+        repo directory — so "open the shot's fx folder" quietly means "open the
+        launcher's folder". ``JOB`` names the shot; this makes the process agree.
+
+        Args:
+            project_path: The workdir the launcher resolved for this shot.
+
+        Returns:
+            The workdir, or ``None`` to inherit our cwd when it does not exist.
+        """
+        if project_path and os.path.isdir(project_path):
+            return project_path
+        return None
 
     def prepare_environment(self, **kwargs) -> dict[str, str]:
         """Prepare environment for Houdini launch.

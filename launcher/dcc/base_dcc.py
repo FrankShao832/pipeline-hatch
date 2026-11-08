@@ -193,8 +193,9 @@ class BaseDCC(ABC):
         """Working directory to spawn the DCC in (``None`` = inherit ours).
 
         Most DCCs accept a project/workspace argument, so the launcher leaves
-        the cwd alone. Nuke has no such switch and is opened "in" a shot folder
-        by spawning it there — see :meth:`NukeDCC.launch_cwd`.
+        the cwd alone. Nuke and Houdini have no such switch and are opened "in"
+        a shot folder by spawning them there — see :meth:`NukeDCC.launch_cwd`
+        and :meth:`HoudiniDCC.launch_cwd`.
         """
         return None
 
@@ -209,6 +210,23 @@ class BaseDCC(ABC):
             Dictionary of environment variables.
         """
         pass
+
+    def startup_script(self, workdir: Optional[str] = None, **context) -> Optional[str]:
+        """Scene file to open so the DCC is "in" *workdir* as well as on it.
+
+        Most DCCs are pointed at the work folder by a switch (Maya ``-proj``)
+        or by an environment variable (Houdini ``$JOB``), so there is nothing to
+        open. Nuke has neither: its project folder is the folder of the open
+        script, so it needs a script — see :meth:`NukeDCC.startup_script`.
+
+        Args:
+            workdir: The work folder the launcher resolved for this shot.
+            **context: Launch context (``shot`` / ``department`` / ``fps``).
+
+        Returns:
+            Path of a file to open, or ``None`` to launch without one.
+        """
+        return None
 
     def parse_env_file(self, env_path: Optional[str] = None) -> dict[str, str]:
         """Parse a .env style file.

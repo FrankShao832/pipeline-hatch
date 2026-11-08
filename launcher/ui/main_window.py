@@ -533,6 +533,23 @@ class MainWindow(QMainWindow):
         if self.role == 'houdini' and self.file_path:
             env_context['JOB'] = self.file_path
 
+        # A DCC with no project switch and no $JOB (Nuke) is only "in" the shot
+        # folder once a script from that folder is open: its save dialog starts
+        # in dirname(nuke.scriptName()). Open the newest .nk there, or create
+        # <shot>_v001.nk, so File > Save As lands in the department folder.
+        # A failure here returns None and Nuke still launches bare.
+        if not file_path and self.file_path:
+            startup = dcc.startup_script(
+                self.file_path,
+                shot=self.shot,
+                department=self.department,
+                fps=env_context.get("FPS", ""),
+            )
+            if startup:
+                file_path = startup
+                logger.info(f"Opening {dcc.name} startup script: {startup}")
+                self.file_tree.load_for_path(self.file_path)
+
         # Build and execute command
         if file_path and os.path.exists(file_path):
             command = dcc.build_command(file_path=file_path)

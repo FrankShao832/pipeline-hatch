@@ -130,6 +130,21 @@ class TestHoudiniDCC:
         assert houdini.role == "houdini"
         assert houdini.app_name == "Houdini FX 20.5.613.app"
 
+    def test_houdini_opens_in_the_shot_folder(self, houdini_config, tmp_path):
+        """Houdini gets no workdir argument, so the cwd is how it finds one.
+
+        Without this the file browser and every relative path start in the
+        launcher's own directory — the 2026-11-01 rehearsal showed Houdini
+        running in the repo root while JOB pointed at the shot.
+        """
+        houdini = HoudiniDCC(houdini_config)
+        workdir = tmp_path / "Rehearsal01" / "test" / "re_test_001" / "fx"
+        workdir.mkdir(parents=True)
+
+        assert houdini.launch_cwd(str(workdir)) == str(workdir)
+        assert houdini.launch_cwd(str(tmp_path / "gone")) is None
+        assert houdini.launch_cwd(None) is None
+
     def test_build_command_with_file(self, houdini_config):
         """Test building command with file path."""
         houdini = HoudiniDCC(houdini_config)
@@ -225,8 +240,8 @@ class TestNukeDCC:
         assert nuke.launch_cwd(str(tmp_path / "gone")) is None
         assert nuke.launch_cwd(None) is None
 
-    def test_other_dccs_do_not_override_cwd(self):
-        """Only Nuke needs the cwd trick; the rest keep the inherited cwd."""
+    def test_the_base_class_leaves_the_cwd_alone(self):
+        """DCCs that take a project argument keep the inherited cwd."""
         from launcher.dcc.base_dcc import BaseDCC
         assert BaseDCC.launch_cwd(None, "/some/path") is None
 
