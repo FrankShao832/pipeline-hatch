@@ -33,6 +33,11 @@ projects:
     publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
+  - name: "Rehearsal01"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
   # Scaffold test beds (Test / test_01 / test_02 / test_project) were removed
   # from the registry on 2026-10-31: they were half-built places to try the
   # launcher, and every one of them either had no publish folder or no real
