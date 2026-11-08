@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipeline-hatch"
-version = "2.3.0"
+version = "2.4.0"
 description = "Pipeline Hatch - A configuration-driven DCC application launcher for VFX/animation pipelines"
 readme = "README.md"
 requires-python = ">=3.10"

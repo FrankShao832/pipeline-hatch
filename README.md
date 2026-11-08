@@ -2,8 +2,8 @@
 
 A configuration-driven DCC (Digital Content Creation) application launcher for VFX/animation pipelines. Built with PySide6.
 
-> **Current Version:** 2.3.0  
-> **Status:** Development preview — launcher honours config/env.yaml, 338 tests
+> **Current Version:** 2.4.0  
+> **Status:** Development preview — launcher honours config/env.yaml, 453 tests
 
 ---
 
@@ -22,7 +22,7 @@ A configuration-driven DCC (Digital Content Creation) application launcher for V
   settings panel with a one-click Revert
 - 🆕 **Project Creation** — name, roots and a dry-run preview of exactly which
   folders and overrides will be written, then the real thing
-- 🧪 **Fully Tested** — 338 unit tests covering all core modules
+- 🧪 **Fully Tested** — 453 unit tests covering all core modules
 
 ---
 
@@ -268,7 +268,7 @@ pipeline-hatch/
 │   │   └── imgs/             # Icons and images
 │   └── utils/
 │       └── logger.py         # Logging module
-├── tests/                    # Unit tests (338 tests)
+├── tests/                    # Unit tests (453 tests)
 │   ├── test_config.py        # ConfigManager + shipped dcc.yaml guards
 │   ├── test_dcc.py           # DCC command building / launch cwd
 │   ├── test_main_window*.py  # Window wiring, launch, settings, workdirs
