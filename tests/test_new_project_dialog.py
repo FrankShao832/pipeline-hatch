@@ -8,7 +8,7 @@ closing on a half-created project.
 """
 
 import pytest
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QLabel
 
 from launcher.ui.fakes import FakeSettingsDataSource
 from launcher.ui.viewmodels import ApplySummary, DiagnosticRow
@@ -153,3 +153,120 @@ class TestCreating:
 
         assert {row.name for row in ds.projects()} == {
             "CyberPunk", "DragonLand", "SpaceOdyssey"}
+
+
+class WarningSource(StubSource):
+    """A backend whose warnings only show up once a name is typed.
+
+    That is the real shape of it: ``W_ROOT`` / ``W_PUB`` talk about
+    ``<root>/<name>``, so an unnamed project has nothing to warn about yet and
+    the orange text arrives with the first keystrokes.
+    """
+
+    def __init__(self, warnings: int = 2):
+        super().__init__(dry=ApplySummary(created=("/tmp/x",), env_written=2))
+        self._warnings = warnings
+
+    def validate_project(self, name, root, publish_root):
+        if not name:
+            return []
+        return [
+            DiagnosticRow("warn", f"W_TEST{i}",
+                          f"Publish folder does not exist: {publish_root}/{name} — "
+                          f"repairing the scaffold from the Projects page creates "
+                          f"the missing folders and leaves what exists alone ({i})",
+                          target=name)
+            for i in range(self._warnings)
+        ]
+
+
+@pytest.fixture
+def shown(qapp):
+    """A shown dialog, so geometry means something (it is right on open)."""
+    widgets = []
+
+    def build(warnings: int = 2):
+        widget = NewProjectDialog(WarningSource(warnings), root=ROOT,
+                                  publish_root=PUBLISH)
+        widget.show()
+        QApplication.processEvents()
+        widgets.append(widget)
+        return widget
+
+    yield build
+    for widget in widgets:
+        widget.close()
+        widget.deleteLater()
+
+
+class TestTheWindowFollowsItsText:
+    """Typing a name brings a plan line and, usually, orange warnings.
+
+    The dialog keeps the height it was opened with, so that text used to be
+    paid for by the rows above it — the two path fields lost height the moment
+    a warning showed up. The window follows the content instead.
+    """
+
+    def test_a_warning_makes_the_window_taller(self, shown):
+        dialog = shown()
+        before = dialog.height()
+
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        assert dialog.height() > before
+
+    def test_the_window_is_never_shorter_than_its_text(self, shown):
+        dialog = shown()
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        assert dialog.height() >= dialog.layout().heightForWidth(dialog.width())
+
+    def test_the_path_rows_keep_their_height(self, shown):
+        dialog = shown()
+        before = (dialog.name_edit.height(), dialog.root_edit.height(),
+                  dialog.publish_edit.height())
+
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        assert (dialog.name_edit.height(), dialog.root_edit.height(),
+                dialog.publish_edit.height()) == before
+
+    def test_wrapped_text_is_never_clipped(self, shown):
+        dialog = shown(warnings=3)
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        for label in dialog.findChildren(QLabel):
+            if not label.text():
+                continue
+            assert label.height() >= label.heightForWidth(label.width()), label.text()
+
+    def test_the_window_shrinks_back_when_the_text_goes(self, shown):
+        dialog = shown()
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+        tall = dialog.height()
+
+        dialog.name_edit.setText("")
+        QApplication.processEvents()
+
+        assert dialog.height() < tall
+
+    def test_the_width_does_not_drift(self, shown):
+        dialog = shown()
+        width = dialog.width()
+
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        assert dialog.width() == width
+
+    def test_a_wall_of_warnings_stops_at_the_screen_edge(self, shown):
+        dialog = shown(warnings=12)
+        dialog.name_edit.setText("NewShow")
+        QApplication.processEvents()
+
+        assert dialog.height() <= dialog.screen().availableGeometry().height()

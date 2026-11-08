@@ -15,7 +15,8 @@ from PySide6.QtCore import Qt
 
 from launcher.core.env_store import EnvConfig
 from launcher.ui import main_window as main_window_module
-from launcher.ui.real_source import RealSettingsDataSource
+from launcher.ui import real_source
+from launcher.ui.real_source import RealSettingsDataSource, append_project
 from launcher.ui.viewmodels import EnvRow, ProjectRow
 
 
@@ -432,3 +433,194 @@ class TestProjectsPage:
             assert page.repair_btn.isEnabled()
         finally:
             page.deleteLater()
+
+
+class _RecordingDb:
+    """Stands in for ``DatabaseManager``: notes ``connect()``, refuses sessions."""
+
+    def __init__(self):
+        self.connects = 0
+        self._connected = False
+
+    def connect(self):
+        self.connects += 1
+        self._connected = True
+        return True
+
+    @property
+    def is_connected(self):
+        return self._connected
+
+    def get_session(self):
+        raise RuntimeError("no session in this test")
+
+
+class TestTheBackendConnectsWhenNobodyElseDid:
+    """Only ``launcher/main.py`` connects. Tools and previews must not care.
+
+    ``tools/print_env.py`` builds this backend in a bare process; before this
+    fix it silently fell through to the YAML list and reported a *different*
+    show (the 2026-11-01 rehearsal project exists only in the database).
+    """
+
+    def test_it_connects_before_reading(self, tmp_path):
+        db = _RecordingDb()
+        source = RealSettingsDataSource(db=db, env_store_path=tmp_path / "env.yaml")
+
+        source._db_rows()
+
+        assert db.connects == 1
+
+    def test_it_does_not_reconnect_an_open_database(self, tmp_path):
+        db = _RecordingDb()
+        db.connect()
+        source = RealSettingsDataSource(db=db, env_store_path=tmp_path / "env.yaml")
+
+        source._db_rows()
+
+        assert db.connects == 1
+
+    def test_a_fresh_backend_reaches_the_real_database(self, tmp_path):
+        source = RealSettingsDataSource(env_store_path=tmp_path / "env.yaml")
+
+        rows = source._db_rows()
+
+        if rows is None:
+            pytest.skip("launcher database not available")
+        assert rows, "the database has projects"
+
+
+SAMPLE_YAML = '''# Projects Configuration
+# Paths use the ${DEV} placeholder (dev data root, resolved at load time).
+
+projects:
+  - name: "CyberPunk"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
+  # Test beds were removed on 2026-10-31; re-add a section here if needed.
+
+
+# Default paths (used when no project is selected)
+defaults:
+  project_root: ""
+'''
+
+
+class TestTheYamlFallbackLearnsNewProjects:
+    """Creating a project has to reach both stores, or the fallback lies."""
+
+    def _write(self, tmp_path):
+        path = tmp_path / "projects.yaml"
+        path.write_text(SAMPLE_YAML)
+        return path
+
+    def test_the_new_project_is_listed(self, tmp_path):
+        path = self._write(tmp_path)
+
+        assert append_project(path, "Rehearsal01", "/dev/projects/y_pipeline_projects",
+                              "/dev/publish", "/dev") is True
+
+        import yaml
+        names = [p["name"] for p in yaml.safe_load(path.read_text())["projects"]]
+        assert names == ["CyberPunk", "Rehearsal01"]
+
+    def test_the_comments_and_other_sections_survive(self, tmp_path):
+        path = self._write(tmp_path)
+
+        append_project(path, "Rehearsal01", "/dev/projects/y_pipeline_projects",
+                       "/dev/publish", "/dev")
+
+        text = path.read_text()
+        assert "# Test beds were removed" in text
+        assert text.rstrip().endswith('project_root: ""')
+
+    def test_roots_keep_the_dev_placeholder(self, tmp_path):
+        path = self._write(tmp_path)
+
+        append_project(path, "Rehearsal01", "/dev/projects/y_pipeline_projects",
+                       "/dev/publish", "/dev")
+
+        entry = path.read_text().split("Rehearsal01")[1].splitlines()[1:3]
+        assert entry == ['    root: "${DEV}/projects/y_pipeline_projects"',
+                         '    publish_root: "${DEV}/publish"']
+
+    def test_writing_twice_adds_one_project(self, tmp_path):
+        path = self._write(tmp_path)
+
+        append_project(path, "Rehearsal01", "/dev/projects/p", "/dev/pub", "/dev")
+        again = append_project(path, "Rehearsal01", "/dev/projects/p", "/dev/pub", "/dev")
+
+        assert again is False
+        assert path.read_text().count('name: "Rehearsal01"') == 1
+
+    def test_the_previous_bytes_are_kept(self, tmp_path):
+        path = self._write(tmp_path)
+
+        append_project(path, "Rehearsal01", "/dev/projects/p", "/dev/pub", "/dev")
+
+        backups = list(tmp_path.glob("projects.yaml.bak.*"))
+        assert backups and backups[0].read_text() == SAMPLE_YAML
+
+    def test_a_file_without_a_projects_list_is_left_alone(self, tmp_path):
+        path = tmp_path / "projects.yaml"
+        path.write_text("defaults:\n  project_root: \"\"\n")
+
+        assert append_project(path, "X", "/a", "/b") is False
+        assert path.read_text() == "defaults:\n  project_root: \"\"\n"
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path):
+        assert append_project(tmp_path / "nope.yaml", "X", "/a", "/b") is False
+
+
+class _StubConfig:
+    """Just enough ``ConfigManager`` for the creation write path."""
+
+    def __init__(self, config_dir):
+        self.config_dir = config_dir
+        self.dev_root = config_dir
+        self.reloads = 0
+
+    def reload(self):
+        self.reloads += 1
+
+
+class TestCreatingAProjectWritesBothStores:
+    def _source(self, tmp_path):
+        return RealSettingsDataSource(db=_RecordingDb(),
+                                      config=_StubConfig(tmp_path),
+                                      env_store_path=tmp_path / "env.yaml")
+
+    def test_the_fallback_list_is_updated(self, tmp_path, monkeypatch):
+        calls = []
+
+        def fake_append(*args, **kwargs):
+            calls.append(args)
+            return True
+
+        monkeypatch.setattr(real_source, "append_project", fake_append)
+        source = self._source(tmp_path)
+
+        source.create_project("NewShow", str(tmp_path / "projects"),
+                              str(tmp_path / "publish"), {}, False)
+
+        assert calls and calls[0][1] == "NewShow"
+        assert source.config.reloads == 1
+
+    def test_a_yaml_failure_is_a_warning_not_a_dead_project(self, tmp_path, monkeypatch):
+        def boom(*args, **kwargs):
+            raise OSError("disk is read-only")
+
+        monkeypatch.setattr(real_source, "append_project", boom)
+        source = self._source(tmp_path)
+
+        summary = source.create_project("NewShow", str(tmp_path / "projects"),
+                                        str(tmp_path / "publish"), {}, False)
+
+        assert any(d.code == "W_YAML" for d in summary.diagnostics)
+        # The database error in ``summary.errors`` is this fixture's own doing
+        # (``_RecordingDb`` refuses sessions). What matters: a YAML failure never
+        # becomes an error — that would keep the dialog open and invite creating
+        # the project a second time.
+        assert all("yaml" not in reason.lower() for _, reason in summary.errors)

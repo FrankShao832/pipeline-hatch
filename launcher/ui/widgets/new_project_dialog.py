@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +47,12 @@ MUTED = "color: #8b94a3;"
 ERROR = "color: #e5484d;"
 WARNING = "color: #f59e0b;"
 OK = "color: #30a46c;"
+
+#: The dialog never gets narrower than this, whatever the text says.
+MIN_WIDTH = 520
+
+#: Room left to the screen edge when the dialog has to grow to fit its text.
+SCREEN_MARGIN = 80
 
 
 def _plural(count: int, noun: str) -> str:
@@ -79,8 +86,11 @@ class NewProjectDialog(QDialog):
 
         self.setWindowTitle("New Project")
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(MIN_WIDTH)
         self._build_ui(root, publish_root)
+        # Open at the intended width; from here on the window may only grow in
+        # height, so a wider window never creeps back when the text shortens.
+        self.resize(MIN_WIDTH, self.sizeHint().height())
         self._refresh_plan()
 
     # -- Construction ------------------------------------------------------
@@ -140,6 +150,9 @@ class NewProjectDialog(QDialog):
     def _with_browse(self, edit: QLineEdit, title: str) -> QWidget:
         """Put a Browse button next to a path field."""
         row = QWidget()
+        # A path field keeps its height: whatever the text below grows into, it
+        # is not paid for out of these two rows.
+        row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         box = QHBoxLayout(row)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(6)
@@ -247,6 +260,31 @@ class NewProjectDialog(QDialog):
 
         self._render_issues(errors, warnings)
         self.create_btn.setEnabled(bool(self.name()) and not errors)
+        self._fit_to_content()
+
+    def _fit_to_content(self) -> None:
+        """Follow the text with the window instead of squeezing the fields.
+
+        Two labels appear and disappear while typing — the plan line, and the
+        warnings under it. A dialog keeps the height it was opened with, so that
+        extra text used to be paid for by the rows above it: type a name, an
+        orange warning appears, and the two path fields lose a few pixels each
+        time. Re-fit instead. The width stays where the user put it, the height
+        follows ``heightForWidth`` (so word-wrapped text is measured, not
+        guessed), and the screen edge is the only ceiling.
+        """
+        layout = self.layout()
+        if layout is None:
+            return
+        layout.activate()
+        width = max(self.width(), MIN_WIDTH)
+        wanted = (layout.heightForWidth(width) if layout.hasHeightForWidth()
+                  else self.sizeHint().height())
+        height = max(wanted, self.minimumSizeHint().height())
+        screen = self.screen()
+        if screen is not None:
+            height = min(height, screen.availableGeometry().height() - SCREEN_MARGIN)
+        self.resize(width, height)
 
     # -- Creating ----------------------------------------------------------
 

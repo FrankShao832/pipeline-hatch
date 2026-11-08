@@ -26,10 +26,13 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from launcher.core.env_resolver import resolve
 from launcher.core.env_store import EnvConfig, EnvStoreError
@@ -80,6 +83,123 @@ def _rename_error(code: str, message: str, hint: str, target: str) -> ApplySumma
         errors=((target, message),),
         diagnostics=(DiagnosticRow("error", code, message, hint, target=target),),
     )
+
+
+def _yaml_root(value: str, dev_root: str | Path | None) -> str:
+    """Write a root back as ``${DEV}/...`` when it lives under ``$DEV``.
+
+    The rest of the file uses the placeholder, which is what lets the same
+    checkout work on the Mac and on the Linux box; a literal volume path would
+    pin the file to one machine.
+    """
+    if not dev_root:
+        return value
+    dev = str(dev_root).rstrip("/")
+    if value == dev:
+        return "${DEV}"
+    if value.startswith(dev + "/"):
+        return "${DEV}/" + value[len(dev) + 1:]
+    return value
+
+
+def _project_block(name: str, root: str, publish_root: str,
+                   dev_root: str | Path | None) -> list[str]:
+    """The YAML lines for one project, in the shape the file already uses."""
+    return [
+        f'  - name: "{name}"',
+        f'    root: "{_yaml_root(root, dev_root)}"',
+        f'    publish_root: "{_yaml_root(publish_root, dev_root)}"',
+        "    enabled: true",
+    ]
+
+
+def _yaml_has_project(text: str, name: str) -> bool:
+    """True when the document already lists *name* (idempotent write)."""
+    pattern = f"^\\s*-\\s*name:\\s*[\"']?{re.escape(name)}[\"']?\\s*$"
+    return re.search(pattern, text, re.MULTILINE) is not None
+
+
+def _insert_project(text: str, block: list[str]) -> str | None:
+    """Splice *block* into the ``projects:`` list; ``None`` if it has no home.
+
+    The entry goes **after the last project**, not at the end of the section:
+    this file keeps explanatory comments at the bottom of the list, and a new
+    project landing underneath them would read as part of that explanation.
+    """
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.rstrip() == "projects:"),
+                 None)
+    if start is None:
+        return None
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i] and not lines[i][0].isspace() and not lines[i].startswith("#"):
+            end = i
+            break
+    last_entry = None
+    for i in range(start + 1, end):
+        if lines[i].lstrip().startswith("- name:"):
+            last_entry = i
+    if last_entry is None:
+        insert_at = start + 1
+    else:
+        insert_at = last_entry + 1
+        while insert_at < end and lines[insert_at].startswith("    "):
+            insert_at += 1
+    before, after = lines[:insert_at], lines[insert_at:]
+    if after and not after[0].strip():
+        after = after[1:]                     # the blank line we are re-adding
+    merged = before + [""] + block + [""] + after
+    return "\n".join(merged).rstrip("\n") + "\n"
+
+
+def append_project(path: str | Path, name: str, root: str, publish_root: str,
+                   dev_root: str | Path | None = None) -> bool:
+    """Add one project to ``projects.yaml`` without disturbing the file.
+
+    The database is the source of truth; this file is what the launcher falls
+    back to when the database is down, so it has to learn a new project too or
+    that fallback quietly answers with an older show list (which is exactly what
+    happened to the first rehearsal project, 2026-11-01).
+
+    The file is edited as **text**, not round-tripped through ``yaml.safe_dump``:
+    every section in it is explained by comments, and a dump would delete all of
+    them. The result is parsed back and re-checked before anything is replaced,
+    and the previous bytes are kept as ``<name>.bak.<epoch-ms>``.
+
+    Args:
+        path: ``config/projects.yaml`` (a missing file means "no fallback here").
+        name: Project name, already validated by the caller.
+        root: Work root — the container directory that holds ``<name>``.
+        publish_root: Publish root.
+        dev_root: ``$DEV``, used to keep the ``${DEV}/...`` placeholders.
+
+    Returns:
+        True when the file changed. False when there was nothing to do — no such
+        file, the project is already listed, or the edit did not parse.
+    """
+    file = Path(path)
+    if not file.is_file():
+        return False
+    text = file.read_text()
+    if _yaml_has_project(text, name):
+        return False
+
+    updated = _insert_project(text, _project_block(name, root, publish_root, dev_root))
+    if updated is None:
+        return False
+    try:
+        parsed = yaml.safe_load(updated) or {}
+    except yaml.YAMLError:
+        return False
+    listed = {str(entry.get("name")) for entry in (parsed.get("projects") or [])
+              if isinstance(entry, dict)}
+    if name not in listed:
+        return False
+
+    file.with_name(f"{file.name}.bak.{int(time.time() * 1000)}").write_text(text)
+    file.write_text(updated)
+    return True
 
 
 def _list_dirs(path: str) -> list[str]:
@@ -207,6 +327,12 @@ class RealSettingsDataSource:
     def _db_rows(self) -> list[ProjectRow] | None:
         """Read projects from the database (``None`` when it is unavailable)."""
         try:
+            if not self.db.is_connected:
+                # Nothing outside ``launcher/main.py`` ever connects, so a tool
+                # (``tools/print_env.py``) or a preview built in a fresh process
+                # would fall through to the YAML list — and report a *different*
+                # show without saying so. Connect where the rows are needed.
+                self.db.connect()
             if not self.db.is_connected:
                 return None
             from launcher.database.repository import ProjectRepo
@@ -457,6 +583,24 @@ class RealSettingsDataSource:
                 session.close()
         except Exception as exc:
             errors.append((name, f"database: {exc}"))
+
+        # The database is the source of truth; projects.yaml is what the
+        # launcher falls back to when it is down, so it has to learn the new
+        # project as well — otherwise the fallback answers with the old show
+        # list (which is how the first rehearsal project went missing there).
+        # A failure here is a warning, not an error: the project does exist, and
+        # refusing to close the dialog would invite creating it twice.
+        try:
+            added = append_project(Path(self.config.config_dir) / "projects.yaml",
+                                   name, root, publish_root,
+                                   getattr(self.config, "dev_root", None))
+            if added:
+                self.config.reload()
+        except Exception as exc:
+            diagnostics += (DiagnosticRow(
+                "warn", "W_YAML", f"Could not add {name} to projects.yaml: {exc}",
+                "The database row is what matters; the YAML fallback will not "
+                "know this project yet.", target=name),)
 
         if env_written and store is not None:
             try:
