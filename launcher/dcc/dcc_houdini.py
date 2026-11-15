@@ -1,8 +1,10 @@
 """Houdini DCC implementation."""
 
 import os
-import platform
+from pathlib import Path
 from typing import Optional
+
+from launcher.core.config_manager import config_manager
 from .base_dcc import BaseDCC
 
 
@@ -16,37 +18,73 @@ class HoudiniDCC(BaseDCC):
     ) -> list[str]:
         """Build Houdini launch command.
 
+        Uses the Houdini executable directly (not `open -a` on macOS)
+        so that environment variables set via subprocess.Popen(env=...)
+        are properly inherited by the Houdini process.
+
         Args:
             file_path: Houdini scene file (.hip/.hipnc) to open.
-            project_path: Houdini JOB directory.
+            project_path: Houdini JOB directory (unused in command itself).
 
         Returns:
             Command list for subprocess.
         """
-        # Use 'open' command on macOS for proper GUI app launching
-        if platform.system() == "Darwin" and self._app_name:
-            cmd = ["open", "-a", self._app_name]
-            if file_path:
-                cmd.extend(["--args", file_path])
-        else:
-            cmd = [self._executable]
-            if file_path:
-                cmd.append(file_path)
-
+        cmd = [self._executable]
+        if file_path:
+            cmd.append(file_path)
         return cmd
+
+    def launch_cwd(self, project_path: Optional[str] = None) -> Optional[str]:
+        """Open Houdini *in* the shot workdir.
+
+        Houdini takes no path for the work folder: ``flags.file`` is empty and
+        ``prepare_environment`` hands the folder over as ``JOB``, which Houdini
+        ignores until something asks for it. Without a cwd the file browser and
+        every relative path start wherever the launcher itself was started — the
+        repo directory — so "open the shot's fx folder" quietly means "open the
+        launcher's folder". ``JOB`` names the shot; this makes the process agree.
+
+        Args:
+            project_path: The workdir the launcher resolved for this shot.
+
+        Returns:
+            The workdir, or ``None`` to inherit our cwd when it does not exist.
+        """
+        if project_path and os.path.isdir(project_path):
+            return project_path
+        return None
 
     def prepare_environment(self, **kwargs) -> dict[str, str]:
         """Prepare environment for Houdini launch.
 
+        Returns only the pipeline-specific overrides.
+        Caller should merge with os.environ.copy() before use.
+
+        Injects:
+        - JOB: Houdini project directory
+        - PIPELINE_PUBLISHER: Publisher repo root (startup/menu/launcher resolve via it)
+        Menu note: the 'Pipeline > Publish...' menu is NOT installed here.
+        It comes from the package at
+        ~/Library/Preferences/houdini/20.5/packages/pipeline_publisher.json
+        whose hpath puts the publisher root on HOUDINI_PATH, so Houdini
+        merges its MainMenuCommon.xml natively. A Qt injection via
+        HOUDINI_STARTUP_PYTHON was tried and removed (2026-09-08): Houdini
+        20.5's menu bar is not reliably editable via findChild(QMenuBar).
+        - Pipeline env vars from config (ROLE, SHOW, SEQ, etc.)
+
+        Tool paths follow the $DEV/tools/<repo> convention and are resolved
+        through the ConfigManager (env var first, repo-layout inference in
+        dev mode) — never via brittle ``__file__`` backtracking.
+
         Args:
-            **kwargs: Pipeline context (ROLE, PROJECT_ROOT, SHOW, JOB, etc.)
+            **kwargs: Pipeline context (DCC, DEPARTMENT, PROJECT_ROOT, SHOW, JOB, etc.)
 
         Returns:
-            Environment variables dict.
+            Environment variables dict (overrides only).
         """
         env = {}
 
-        # Set Houdini JOB variable (from config or runtime)
+        # --- Houdini JOB ---
         job_from_config = self.env_vars_config.get("JOB", "")
         if job_from_config and "JOB" not in kwargs:
             env["JOB"] = job_from_config
@@ -55,7 +93,15 @@ class HoudiniDCC(BaseDCC):
         elif project_path := kwargs.get("project_path"):
             env["JOB"] = project_path
 
-        # Merge pipeline environment variables from config
+        # --- PIPELINE_PUBLISHER_ROOT ---
+        # $DEV/tools/pipeline/pipeline_publisher — resolved by the publisher
+        # startup/menu/launcher modules (env-var strategy, no __file__ tricks).
+        publisher_root = (
+            config_manager.dev_root / "tools" / "pipeline" / "pipeline_publisher"
+        )
+        env["PIPELINE_PUBLISHER"] = str(publisher_root)
+
+        # --- Pipeline environment variables from config ---
         for key in self.get_pipeline_env_keys():
             if key in kwargs:
                 env[key] = str(kwargs[key])

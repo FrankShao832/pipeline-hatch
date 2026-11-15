@@ -74,6 +74,8 @@ class FileTreeWidget(QTreeWidget):
         Args:
             path: Directory path to watch.
         """
+        if not path:
+            return
         if self._watcher is not None and path not in self._watched_paths:
             self._watcher.addPath(path)
             self._watched_paths.add(path)

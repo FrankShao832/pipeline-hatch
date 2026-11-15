@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "launcher"))
 
 from launcher.dcc.dcc_maya import MayaDCC
 from launcher.dcc.dcc_houdini import HoudiniDCC
+from launcher.dcc.dcc_katana import KatanaDCC
 from launcher.dcc.dcc_nuke import NukeDCC
 from launcher.core.config_manager import ConfigManager
 
@@ -87,12 +88,12 @@ class TestMayaDCC:
         """Test environment preparation."""
         maya = MayaDCC(maya_config)
         env = maya.prepare_environment(
-            ROLE="maya",
+            DCC="maya",
             PROJECT_ROOT="/projects",
             SHOW="Demo"
         )
 
-        assert env["ROLE"] == "maya"
+        assert env["DCC"] == "maya"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 
@@ -129,29 +130,41 @@ class TestHoudiniDCC:
         assert houdini.role == "houdini"
         assert houdini.app_name == "Houdini FX 20.5.613.app"
 
+    def test_houdini_opens_in_the_shot_folder(self, houdini_config, tmp_path):
+        """Houdini gets no workdir argument, so the cwd is how it finds one.
+
+        Without this the file browser and every relative path start in the
+        launcher's own directory — the 2026-11-01 rehearsal showed Houdini
+        running in the repo root while JOB pointed at the shot.
+        """
+        houdini = HoudiniDCC(houdini_config)
+        workdir = tmp_path / "Rehearsal01" / "test" / "re_test_001" / "fx"
+        workdir.mkdir(parents=True)
+
+        assert houdini.launch_cwd(str(workdir)) == str(workdir)
+        assert houdini.launch_cwd(str(tmp_path / "gone")) is None
+        assert houdini.launch_cwd(None) is None
+
     def test_build_command_with_file(self, houdini_config):
         """Test building command with file path."""
         houdini = HoudiniDCC(houdini_config)
         cmd = houdini.build_command(file_path="/test/scene.hip")
 
-        if platform.system() == "Darwin":
-            assert "open" in cmd
-            assert "-a" in cmd
-            assert "Houdini FX 20.5.613.app" in cmd
-            assert "--args" in cmd
-            assert "/test/scene.hip" in cmd
+        # Direct executable path (not open -a) to preserve env vars
+        assert houdini.executable in cmd
+        assert "/test/scene.hip" in cmd
 
     def test_prepare_environment(self, houdini_config):
         """Test environment preparation with JOB."""
         houdini = HoudiniDCC(houdini_config)
         env = houdini.prepare_environment(
             JOB="/test/jobs",
-            ROLE="houdini",
+            DCC="houdini",
             SHOW="Demo"
         )
 
         assert env["JOB"] == "/test/jobs"
-        assert env["ROLE"] == "houdini"
+        assert env["DCC"] == "houdini"
         assert env["SHOW"] == "Demo"
 
 
@@ -176,7 +189,8 @@ class TestNukeDCC:
             "flags": {
                 "nukex": "--nukex",
                 "file": "",
-                "project": "-m"
+                # No project-directory flag in Nuke (2026-10-25 crash fix).
+                "project": ""
             }
         }
 
@@ -189,16 +203,47 @@ class TestNukeDCC:
         assert nuke.app_name == "Nuke16.0v3.app"
 
     def test_build_command_nukex_mode(self, nuke_config):
-        """Test building Nuke command with NukeX."""
+        """NukeX mode, no script: the workdir must NOT become an argument.
+
+        Regression pin for the 2026-10-25 crash: ``-m`` is Nuke's render
+        thread count, so passing a directory made Nuke 17 segfault at startup.
+        """
         nuke = NukeDCC(nuke_config)
         cmd = nuke.build_command(project_path="/test/project")
 
-        if platform.system() == "Darwin":
-            assert "open" in cmd
-            assert "-a" in cmd
-            assert "Nuke16.0v3.app" in cmd
-            assert "--args" in cmd
-            assert "--nukex" in cmd
+        # Direct executable path (not open -a) to preserve env vars
+        assert nuke.executable in cmd
+        assert "--nukex" in cmd
+        assert "-m" not in cmd
+        assert "/test/project" not in cmd
+        assert cmd == [nuke.executable, "--nukex"]
+
+    def test_project_flag_is_honoured_when_configured(self, nuke_config):
+        """A DCC-style project flag still works if someone configures one."""
+        nuke_config["flags"]["project"] = "-project"
+        nuke = NukeDCC(nuke_config)
+        cmd = nuke.build_command(project_path="/test/project")
+        assert cmd[-2:] == ["-project", "/test/project"]
+
+    def test_empty_project_flag_does_not_leave_a_dangling_arg(self, nuke_config):
+        """An empty flag must be dropped, not passed as an empty string."""
+        nuke = NukeDCC(nuke_config)
+        cmd = nuke.build_command(project_path="/test/project")
+        assert "" not in cmd
+
+    def test_launch_cwd_only_for_existing_directories(self, nuke_config, tmp_path):
+        nuke = NukeDCC(nuke_config)
+        workdir = tmp_path / "comp"
+        workdir.mkdir()
+
+        assert nuke.launch_cwd(str(workdir)) == str(workdir)
+        assert nuke.launch_cwd(str(tmp_path / "gone")) is None
+        assert nuke.launch_cwd(None) is None
+
+    def test_the_base_class_leaves_the_cwd_alone(self):
+        """DCCs that take a project argument keep the inherited cwd."""
+        from launcher.dcc.base_dcc import BaseDCC
+        assert BaseDCC.launch_cwd(None, "/some/path") is None
 
     def test_build_command_with_file(self, nuke_config):
         """Test building command with file path."""
@@ -212,12 +257,81 @@ class TestNukeDCC:
         """Test environment preparation."""
         nuke = NukeDCC(nuke_config)
         env = nuke.prepare_environment(
-            ROLE="nuke",
+            DCC="nuke",
             PROJECT_ROOT="/projects",
             SHOW="Demo"
         )
 
-        assert env["ROLE"] == "nuke"
+        assert env["DCC"] == "nuke"
+        assert env["PROJECT_ROOT"] == "/projects"
+        assert env["SHOW"] == "Demo"
+
+
+class TestKatanaDCC:
+    """Test suite for KatanaDCC."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Reset singleton before each test."""
+        ConfigManager._instance = None
+        ConfigManager._config_cache = {}
+        yield
+
+    @pytest.fixture
+    def katana_config(self):
+        """Sample Katana configuration."""
+        return {
+            "name": "Katana",
+            "role": "katana",
+            "app_name": "Katana7.0v2",
+            "executable": "/opt/Katana7.0v2/bin/katanaBin",
+            "flags": {
+                "file": ""
+            }
+        }
+
+    def test_properties(self, katana_config):
+        """Test KatanaDCC property access."""
+        katana = KatanaDCC(katana_config)
+
+        assert katana.name == "Katana"
+        assert katana.role == "katana"
+        assert katana.app_name == "Katana7.0v2"
+        assert katana.executable == "/opt/Katana7.0v2/bin/katanaBin"
+
+    def test_build_command_no_file(self, katana_config):
+        """Test building command without file."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command()
+
+        assert cmd == ["/opt/Katana7.0v2/bin/katanaBin"]
+
+    def test_build_command_with_file(self, katana_config):
+        """Test building command with file path."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command(file_path="/test/scene.katana")
+
+        assert katana.executable in cmd
+        assert "/test/scene.katana" in cmd
+
+    def test_build_command_project_ignored(self, katana_config):
+        """Katana has no -proj flag; project_path must not enter command."""
+        katana = KatanaDCC(katana_config)
+        cmd = katana.build_command(project_path="/test/project")
+
+        assert cmd == ["/opt/Katana7.0v2/bin/katanaBin"]
+        assert "/test/project" not in cmd
+
+    def test_prepare_environment(self, katana_config):
+        """Test environment preparation."""
+        katana = KatanaDCC(katana_config)
+        env = katana.prepare_environment(
+            DCC="katana",
+            PROJECT_ROOT="/projects",
+            SHOW="Demo"
+        )
+
+        assert env["DCC"] == "katana"
         assert env["PROJECT_ROOT"] == "/projects"
         assert env["SHOW"] == "Demo"
 

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Pipeline Hatch
+Comment=DCC launcher (Y Pipeline)
+GenericName=DCC Launcher
+# Machine-specific: the working clone on the Linux box. launch.py derives
+# everything else (env interpreter, entry point) from its own location.
+Exec=/usr/bin/python3 /srv/share/dev/tools/pipeline/pipeline_hatch/launcher/launch.py
+Icon=applications-development
+Terminal=false
+Categories=Development;Graphics;
+StartupNotify=true

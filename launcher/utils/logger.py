@@ -4,6 +4,7 @@ Provides centralized logging with file rotation and multiple output handlers.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -36,8 +37,17 @@ class Logger:
 
     def _setup_logging(self):
         """Setup logging configuration."""
-        # Use ~/Library/Logs/pipeline_launcher/ for both dev and bundled app
-        log_dir = Path.home() / "Library" / "Logs" / "pipeline_launcher"
+        # Platform-aware log directory. macOS keeps the historical
+        # ~/Library/Logs/pipeline_launcher; Linux and other platforms follow
+        # the XDG convention ($XDG_STATE_HOME/pipeline_hatch/logs, falling
+        # back to ~/.local/state/pipeline_hatch/logs).
+        if sys.platform == "darwin":
+            log_dir = Path.home() / "Library" / "Logs" / "pipeline_launcher"
+        else:
+            state_home = Path(os.environ.get("XDG_STATE_HOME", ""))
+            if not state_home.is_absolute():
+                state_home = Path.home() / ".local" / "state"
+            log_dir = state_home / "pipeline_hatch" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create logger

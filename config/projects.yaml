@@ -1,27 +1,49 @@
 # Projects Configuration
-# Define project roots and publish paths
-
-# Example structure for future projects:
-# - name: "ShowA"
-#   root: "/Volumes/Projects/ShowA"
-#   publish_root: "/Volumes/Publish/ShowA"
-#   enabled: true
+# Define project roots and publish paths.
+#
+# Paths use the ${DEV} placeholder (dev data root, resolved at load time):
+#   macOS: /Volumes/Development   →  ${DEV}/projects/y_pipeline_projects
+#   Linux: /srv/share/dev         →  ${DEV}/projects/y_pipeline_projects
+# Only override a project section in config/local.yaml when a machine truly
+# needs a different layout (list sections replace the shared list wholesale).
 
 projects:
+  - name: "CyberPunk"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "RainPool"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "DragonLand"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
+  - name: "SpaceOdyssey"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
+    enabled: true
+
   - name: "Demo"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
-  - name: "test_01"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
+  - name: "Rehearsal01"
+    root: "${DEV}/projects/y_pipeline_projects"
+    publish_root: "${DEV}/projects/y_pipeline_publish"
     enabled: true
 
-  - name: "test_02"
-    root: "/Volumes/Projects/y_pipeline_projects"
-    publish_root: "/Volumes/Projects/y_pipeline_publish"
-    enabled: true
+  # Scaffold test beds (Test / test_01 / test_02 / test_project) were removed
+  # from the registry on 2026-10-31: they were half-built places to try the
+  # launcher, and every one of them either had no publish folder or no real
+  # work in it, so they only produced W_PATH/W_PUBLISH noise in Preflight.
+  # Their disk trees were left alone; re-add a section here if a test bed is
+  # needed again.
 
 
 # Default paths (used when no project is selected)
@@ -31,7 +53,9 @@ defaults:
 
 # Pipeline environment variable names
 pipeline_env:
-  role: "ROLE"
+  dcc: "DCC"
+  department: "DEPARTMENT"
+  cache_root: "CACHE_ROOT"
   project_root: "PROJECT_ROOT"
   publish_root: "PUBLISH_ROOT"
   show: "SHOW"

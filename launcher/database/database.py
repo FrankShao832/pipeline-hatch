@@ -11,19 +11,21 @@ Provides DatabaseManager singleton that handles:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from launcher.core.config_manager import config_manager
 from launcher.database.models import Base
 
 
 def load_db_config() -> dict:
-    """Load database configuration from YAML + env var overrides.
+    """Load database configuration from shared+local YAML + env overrides.
 
-    Priority: environment variable > YAML file > hardcoded defaults.
+    Priority: environment variable > YAML (via ConfigManager, which merges
+    config/local.yaml and expands ${VAR}) > hardcoded defaults.
+    ``user`` falls back to the OS account when not configured.
     """
     # Defaults
     config = {
@@ -37,17 +39,18 @@ def load_db_config() -> dict:
         "echo": False,
     }
 
-    # Try to load from YAML
-    yaml_path = Path(__file__).parent.parent.parent / "config" / "database.yaml"
-    if yaml_path.exists():
-        try:
-            import yaml
-            with open(yaml_path, "r") as f:
-                raw = yaml.safe_load(f) or {}
-            db_cfg = raw.get("database", {})
-            config.update(db_cfg)
-        except Exception:
-            pass  # Fallback to defaults
+    # Shared + machine-local YAML through the single ConfigManager entry
+    # (same file-location and ${VAR} semantics as dcc/projects configs).
+    try:
+        raw = config_manager.get_database_config()
+        db_cfg = raw.get("database", {})
+        config.update(db_cfg)
+    except Exception:
+        pass  # Fallback to defaults
+
+    # Keep the user fallback intact even if YAML/local.yaml omitted it.
+    if not config.get("user"):
+        config["user"] = os.environ.get("USER", "pipeline_app")
 
     # Environment variable overrides
     env_map = {

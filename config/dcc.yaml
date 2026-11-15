@@ -1,13 +1,16 @@
 # DCC Configuration
 # Digital Content Creation software settings
+#
+# This shared file holds only PLATFORM-INDEPENDENT fields. Machine-specific
+# values (executable / app_name / env_file) are provided per machine by
+# config/local.yaml (git-ignored) — see config/local.yaml.example.
+# Values may use ${VAR} placeholders expanded at load time (e.g. ${DEV}).
 
 dcc:
   maya:
     name: "Maya"
     role: "maya"
-    app_name: "Maya.app"
-    executable: "/Applications/Autodesk/maya2026/Maya.app/Contents/MacOS/Maya"
-    env_file: "~/Library/Preferences/Autodesk/maya/2026/Maya.env"
+    # app_name / executable / env_file: see config/local.yaml (machine-local)
     flags:
       file: "-file"
       project: "-proj"
@@ -15,8 +18,7 @@ dcc:
   houdini:
     name: "Houdini"
     role: "houdini"
-    app_name: "Houdini FX 20.5.613.app"
-    executable: "/Applications/Houdini/Houdini20.5.613/Frameworks/Houdini.framework/Versions/20.5/Resources/bin/houdinifx"
+    # app_name / executable: see config/local.yaml (machine-local)
     env_vars:
       JOB: ""  # Set dynamically at runtime
     flags:
@@ -25,19 +27,64 @@ dcc:
   nuke:
     name: "Nuke"
     role: "nuke"
-    app_name: "Nuke16.0v3.app"
-    executable: "/Applications/Nuke16.0v3/Nuke16.0v3.app/Contents/MacOS/Nuke16.0"
+    # app_name / executable: see config/local.yaml (machine-local)
     flags:
       nukex: "--nukex"
       file: ""
-      project: "-m"
+      # No project-directory flag exists in Nuke: "-m n" means "max concurrent
+      # render threads" (see `Nuke --help`), so passing a path there crashes
+      # Nuke 17 at startup (SIGSEGV in libstudio, 2026-10-25). The working
+      # directory is delivered via the process cwd instead — see
+      # NukeDCC.launch_cwd().
+      project: ""
+
+  katana:
+    name: "Katana"
+    role: "katana"
+    # Linux-only DCC. app_name / executable live in the Linux machine's
+    # config/local.yaml; macOS launchers typically disable/hide it.
+    flags:
+      file: ""
 
 # Pipeline environment variables
+# DCC     = application to launch (houdini/maya/nuke/katana)
+# DEPARTMENT = task being worked on (fx/comp/lighting/...) — also drives the
+#              working directory <seq>/<shot>/<department> and CACHE_ROOT
+# PIPELINE_* names are the publisher's primary source (see publisher.core.constants)
 pipeline:
+  # Task vocabulary (working dirs + DEPARTMENT/PIPELINE_DEPARTMENT)
+  # Canonical department vocabulary (see docs/VOCABULARY.md): the department is
+  # the data axis — it names the shot work folder and travels as DEPARTMENT.
+  departments:
+    - model
+    - rig
+    - anim
+    - layout
+    - fx
+    - lighting
+    - comp
   env_vars:
-    - ROLE
+    - DCC
+    - DEPARTMENT
+    - CACHE_ROOT
+    - PUBLISHER_ENABLE_DATABASE
     - PROJECT_ROOT
     - PUBLISH_ROOT
     - SHOW
     - SEQ
     - SHOT
+    - PIPELINE_PROJECT
+    - PIPELINE_SEQUENCE
+    - PIPELINE_SHOT
+    - PIPELINE_DEPARTMENT
+    - PIPELINE_DCC
+    - PIPELINE_USER
+    # Dev data root + its sibling roots (2026-09-19)
+    - DEV
+    - ASSET_ROOT
+    - RENDER_ROOT
+    # Colour management and frame rate (2026-10-30): every DCC must open with
+    # the show's look and timing, so these are whitelisted pipeline keys — an
+    # override that the DCC silently dropped would make the settings panel lie.
+    - OCIO
+    - FPS

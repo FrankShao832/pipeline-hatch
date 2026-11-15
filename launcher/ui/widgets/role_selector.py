@@ -24,8 +24,11 @@ class RoleSelectorWidget(QComboBox):
         """
         super().__init__(parent)
         self.setEditable(False)
-        self.setFixedWidth(300)
+        # Width follows the content: "Select your dcc..." is the longest label,
+        # so the combo is exactly as wide as its default text.
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._populate()
+        self.setFixedWidth(self.sizeHint().width())
         self.currentIndexChanged.connect(self._on_selection_changed)
 
     def _populate(self) -> None:
@@ -35,7 +38,7 @@ class RoleSelectorWidget(QComboBox):
 
             dcc_config = config_manager.get_dcc_config()
             dcc_list = dcc_config.get("dcc", {})
-            self.addItem('Select your role...')
+            self.addItem('Select your dcc...')
             for role_key, role_config in dcc_list.items():
                 display_name = role_config.get("name", role_key.title())
                 self.addItem(display_name, userData=role_key)
